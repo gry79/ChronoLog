@@ -54,8 +54,20 @@ class ChronosService:
             total += self.target_for_date(chronos, d)
         return round(total, 2)
 
-    def is_hidden_by_default(self, chronos: Optional[Chronos], d: date) -> bool:
-        """True for weekends and days with 0.0 soll (hidden unless expanded)."""
+    @staticmethod
+    def is_zero_hours(hours: float) -> bool:
+        return abs(float(hours)) < 1e-9
+
+    def is_free_day(self, chronos: Optional[Chronos], d: date) -> bool:
+        """
+        Days that are hidden by default in the time-entry grid:
+        weekends and Chronos special days (or any day) with 0.0 soll hours.
+        Same treatment as Saturday/Sunday for navigation arrows.
+        """
         if chronos is None:
             return is_weekend(d)
-        return self.target_for_date(chronos, d) == 0.0
+        return self.is_zero_hours(self.target_for_date(chronos, d))
+
+    def is_hidden_by_default(self, chronos: Optional[Chronos], d: date) -> bool:
+        """Alias for is_free_day (weekends + 0.0h special days)."""
+        return self.is_free_day(chronos, d)

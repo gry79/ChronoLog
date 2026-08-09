@@ -146,15 +146,15 @@
                 <td class="px-2 py-1">
                   <div class="flex items-center justify-center gap-1">
                     {% if not view.is_closed %}
-                      {% if entry.show_up %}
-                      <a href="{{ url_for('time.time_expand', year=view.year, month=view.month, date=entry.expand_date, expand=expand_list) }}"
-                         class="btn-icon" title="Freien Tag oberhalb einblenden" data-action="expand-up">↑</a>
+                      {% if entry.show_up and entry.expand_date_up %}
+                      <a href="{{ url_for('time.time_expand', year=view.year, month=view.month, date=entry.expand_date_up, expand=expand_list) }}"
+                         class="btn-icon" title="Freien Tag / Feiertag oberhalb einblenden" data-action="expand-up">↑</a>
                       {% else %}
                       <span class="btn-icon btn-icon-spacer" aria-hidden="true" data-action="expand-up">↑</span>
                       {% endif %}
-                      {% if entry.show_down %}
-                      <a href="{{ url_for('time.time_expand', year=view.year, month=view.month, date=entry.expand_date, expand=expand_list) }}"
-                         class="btn-icon" title="Freien Tag unterhalb einblenden" data-action="expand-down">↓</a>
+                      {% if entry.show_down and entry.expand_date_down %}
+                      <a href="{{ url_for('time.time_expand', year=view.year, month=view.month, date=entry.expand_date_down, expand=expand_list) }}"
+                         class="btn-icon" title="Freien Tag / Feiertag unterhalb einblenden" data-action="expand-down">↓</a>
                       {% else %}
                       <span class="btn-icon btn-icon-spacer" aria-hidden="true" data-action="expand-down">↓</span>
                       {% endif %}

@@ -105,8 +105,9 @@ class TimeService:
         for e in entries:
             by_date.setdefault(e.entry_date, []).append(e)
 
-        expand = expand_dates or set()
-        # Auto-expand days that already have stored entries but would be hidden
+        # Copy so we never mutate the caller's set (URL expand params stay clean)
+        expand = set(expand_dates) if expand_dates else set()
+        # Auto-show free days that already have stored entries (no URL param needed)
         for d in by_date:
             expand.add(d)
 
@@ -119,7 +120,8 @@ class TimeService:
             target = (
                 self.chronos_service.target_for_date(chronos, d) if chronos else (0.0 if is_weekend(d) else 8.0)
             )
-            hidden = target == 0.0
+            # Free days (weekends + Chronos special days with 0.0h) are hidden by default
+            hidden = self.chronos_service.is_free_day(chronos, d)
             if hidden and d not in expand:
                 continue
 
@@ -207,32 +209,31 @@ class TimeService:
                 e["show_delete"] = not (n == 1 and not day.is_expanded_zero)
                 e["show_up"] = False
                 e["show_down"] = False
+                e["expand_date_up"] = None
+                e["expand_date_down"] = None
 
-            # Up arrow on first entry if previous calendar day is hidden (weekend/0h)
+            # Up arrow on first entry if previous calendar day is free
+            # (Sat/Sun or Chronos special day with 0.0h) and not already shown
             if day.entries:
                 idx = all_dates.index(day.entry_date)
                 if idx > 0:
                     prev_d = all_dates[idx - 1]
-                    prev_hidden = (
-                        self.chronos_service.is_hidden_by_default(chronos, prev_d)
-                        if chronos is not None
-                        else is_weekend(prev_d)
-                    )
-                    if prev_hidden and prev_d not in shown:
+                    if (
+                        self.chronos_service.is_free_day(chronos, prev_d)
+                        and prev_d not in shown
+                    ):
                         day.entries[0]["show_up"] = True
-                        day.entries[0]["expand_date"] = prev_d.isoformat()
+                        day.entries[0]["expand_date_up"] = prev_d.isoformat()
 
-                # Down arrow on last entry if next calendar day is hidden
+                # Down arrow on last entry if next calendar day is free and not shown
                 if idx < len(all_dates) - 1:
                     next_d = all_dates[idx + 1]
-                    next_hidden = (
-                        self.chronos_service.is_hidden_by_default(chronos, next_d)
-                        if chronos is not None
-                        else is_weekend(next_d)
-                    )
-                    if next_hidden and next_d not in shown:
+                    if (
+                        self.chronos_service.is_free_day(chronos, next_d)
+                        and next_d not in shown
+                    ):
                         day.entries[-1]["show_down"] = True
-                        day.entries[-1]["expand_date"] = next_d.isoformat()
+                        day.entries[-1]["expand_date_down"] = next_d.isoformat()
 
     def save_month_entries(
         self, user: User, year: int, month: int, raw_rows: list[dict]
@@ -295,11 +296,11 @@ class TimeService:
         # Keep at least one row per non-hidden day; drop pure-empty expanded zero days
         chronos = self.chronos_service.get_for_user(user)
         final: list[dict] = []
-        dates_with_rows = set(by_date.keys())
 
         for d in month_days(year, month):
             items = by_date.get(d, [])
-            hidden = self.chronos_service.is_hidden_by_default(chronos, d) if chronos else is_weekend(d)
+            # Same free-day rule as the month grid (weekend / 0.0h special days)
+            hidden = self.chronos_service.is_free_day(chronos, d)
             if not items:
                 if not hidden:
                     final.append(
