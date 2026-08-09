@@ -109,41 +109,72 @@ class AuthService:
             self.sessions.delete(session_id)
             log.info("Session invalidated")
 
-    def resolve_session(
-        self, session_id: Optional[str]
-    ) -> tuple[Optional[User], Optional[SessionRow]]:
+    @staticmethod
+    def _as_datetime(value) -> datetime:
+        if isinstance(value, str):
+            return datetime.fromisoformat(value)
+        return value
+
+    def peek_session_status(self, session_id: Optional[str]) -> dict:
+        """
+        Check whether a session is still valid without updating last_activity.
+        Used by the session watchdog so polling/SSE does not reset the idle timer.
+        Invalidates the session when either timeout is exceeded.
+        """
         if not session_id:
-            return None, None
+            return {"active": False, "reason": "none"}
+
         sess = self.sessions.get(session_id)
         if not sess:
-            return None, None
+            return {"active": False, "reason": "invalid"}
 
         now = now_local()
         idle_limit = timedelta(minutes=self.config.session_timeout_idle_min)
-
-        # Normalize datetimes (DuckDB may return naive datetimes)
-        last = sess.last_activity
-        hard = sess.expires_hard
-        if isinstance(last, str):
-            last = datetime.fromisoformat(last)
-        if isinstance(hard, str):
-            hard = datetime.fromisoformat(hard)
+        last = self._as_datetime(sess.last_activity)
+        hard = self._as_datetime(sess.expires_hard)
 
         if hard < now:
             self.sessions.delete(session_id)
             log.info("Session expired (hard timeout)")
-            return None, None
+            return {"active": False, "reason": "hard_timeout"}
+
         if last < now - idle_limit:
             self.sessions.delete(session_id)
             log.info("Session expired (idle timeout)")
-            return None, None
+            return {"active": False, "reason": "idle_timeout"}
 
         user = self.users.get_by_id(sess.user_id)
         if not user or user.is_locked:
             self.sessions.delete(session_id)
+            return {"active": False, "reason": "locked"}
+
+        remaining_idle = max(0.0, (last + idle_limit - now).total_seconds())
+        remaining_hard = max(0.0, (hard - now).total_seconds())
+        remaining = min(remaining_idle, remaining_hard)
+        return {
+            "active": True,
+            "reason": None,
+            "seconds_remaining": int(remaining),
+            "seconds_idle": int(remaining_idle),
+            "seconds_hard": int(remaining_hard),
+        }
+
+    def resolve_session(
+        self, session_id: Optional[str], *, touch: bool = True
+    ) -> tuple[Optional[User], Optional[SessionRow]]:
+        status = self.peek_session_status(session_id)
+        if not status.get("active"):
             return None, None
 
-        self.sessions.touch(session_id)
+        sess = self.sessions.get(session_id)
+        if not sess:
+            return None, None
+        user = self.users.get_by_id(sess.user_id)
+        if not user:
+            return None, None
+
+        if touch:
+            self.sessions.touch(session_id)
         return user, sess
 
     def change_password(

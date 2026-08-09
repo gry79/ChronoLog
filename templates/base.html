@@ -109,6 +109,17 @@
   </main>
 
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% if user is defined and user %}
+  <script>
+    // Session watchdog: server notifies via SSE when idle/hard timeout is reached
+    window.CHRONOLOG_SESSION = {
+      eventsUrl: {{ url_for('auth.session_events')|tojson }},
+      statusUrl: {{ url_for('auth.session_status')|tojson }},
+      logoutUrl: {{ url_for('auth.logout', reason='timeout')|tojson }}
+    };
+  </script>
+  <script src="{{ url_for('static', filename='js/session-watchdog.js') }}"></script>
+  {% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import time
+
 from flask import (
     Blueprint,
+    Response,
     current_app,
+    jsonify,
     make_response,
     redirect,
     render_template,
@@ -13,7 +18,9 @@ from flask import (
     url_for,
 )
 
+from app.logger import log
 from app.web.helpers import (
+    SESSION_COOKIE,
     clear_session_cookie,
     get_auth,
     load_current_user,
@@ -53,6 +60,8 @@ def login():
         if session_id:
             resp = make_response(redirect(url_for("time.time_entry")))
             return set_session_cookie(resp, session_id)
+    elif request.args.get("timeout") == "1":
+        error = "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an."
 
     return render_template(
         "login.html",
@@ -63,12 +72,69 @@ def login():
 
 @bp.route("/logout", methods=["POST", "GET"])
 def logout():
-    from app.web.helpers import SESSION_COOKIE
-
     sid = request.cookies.get(SESSION_COOKIE)
     get_auth().logout(sid)
-    resp = make_response(redirect(url_for("auth.login")))
+    if request.args.get("reason") == "timeout":
+        resp = make_response(redirect(url_for("auth.login", timeout=1)))
+    else:
+        resp = make_response(redirect(url_for("auth.login")))
     return clear_session_cookie(resp)
+
+
+@bp.route("/session/status")
+def session_status():
+    """JSON status for fallback polling – does not reset idle timeout."""
+    sid = request.cookies.get(SESSION_COOKIE)
+    status = get_auth().peek_session_status(sid)
+    code = 200 if status.get("active") else 401
+    return jsonify(status), code
+
+
+@bp.route("/session/events")
+def session_events():
+    """
+    Server-Sent Events stream that notifies the browser when the session expires.
+    Peek-only checks so the idle timer is not extended by the watchdog itself.
+    """
+    sid = request.cookies.get(SESSION_COOKIE)
+    auth = get_auth()
+
+    def generate():
+        # Initial status immediately
+        while True:
+            try:
+                status = auth.peek_session_status(sid)
+            except Exception:
+                log.exception("Session watchdog check failed")
+                yield f"event: session-expired\ndata: {json.dumps({'reason': 'error'})}\n\n"
+                break
+
+            if not status.get("active"):
+                payload = json.dumps({"reason": status.get("reason") or "expired"})
+                yield f"event: session-expired\ndata: {payload}\n\n"
+                break
+
+            remaining = max(0, int(status.get("seconds_remaining") or 0))
+            payload = json.dumps(
+                {
+                    "seconds_remaining": remaining,
+                    "seconds_idle": int(status.get("seconds_idle") or 0),
+                    "seconds_hard": int(status.get("seconds_hard") or 0),
+                }
+            )
+            yield f"event: session-ok\ndata: {payload}\n\n"
+
+            # Sleep until near expiry; cap so keepalives continue and DB is re-checked
+            wait = remaining if remaining > 0 else 1
+            wait = min(wait, 10)
+            time.sleep(wait)
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    }
+    return Response(generate(), mimetype="text/event-stream", headers=headers)
 
 
 @bp.route("/register", methods=["GET", "POST"])
