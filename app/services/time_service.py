@@ -38,6 +38,7 @@ class DayRow:
     is_expanded_zero: bool  # shown even though target is 0
     entries: list[dict] = field(default_factory=list)
     day_total: float = 0.0
+    special_description: str = ""
 
 
 @dataclass
@@ -151,17 +152,18 @@ class TimeService:
                         }
                     )
 
-            is_special = (d.month, d.day) in specials if chronos else False
+            special = specials.get((d.month, d.day)) if chronos else None
             days.append(
                 DayRow(
                     entry_date=d,
                     date_label=d.strftime("%d.%m.%Y"),
                     weekday=weekday_name_de(d),
                     target_hours=target,
-                    is_special=is_special,
+                    is_special=special is not None,
                     is_expanded_zero=hidden,
                     entries=entry_dicts,
                     day_total=round(running if day_entries else 0.0, 2),
+                    special_description=(special.description or "").strip() if special else "",
                 )
             )
 

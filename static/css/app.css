@@ -59,6 +59,72 @@ select.form-control {
   background: transparent;
 }
 
+/* Special-day star with hover info box */
+.special-star {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.2rem;
+  color: #d97706; /* amber-600 */
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+}
+
+.special-tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  min-width: 10rem;
+  max-width: 16rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.5rem;
+  background: #134e4a;
+  color: #f8fafc;
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.35;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
+  z-index: 40;
+  white-space: normal;
+  text-align: left;
+}
+
+.special-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #134e4a;
+}
+
+.special-tooltip-title {
+  display: block;
+  font-weight: 600;
+  color: #fef3c7; /* amber-100 */
+}
+
+.special-tooltip-meta {
+  display: block;
+  margin-top: 0.2rem;
+  color: #ccfbf1; /* chrono-100 */
+}
+
+.special-star:hover .special-tooltip,
+.special-star:focus .special-tooltip,
+.special-star:focus-within .special-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
 /* Admin nav dropdown: no dead gap between button and menu */
 .admin-dropdown-menu {
   opacity: 0;

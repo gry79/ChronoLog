@@ -2,4 +2,4 @@ db_file: data/chronolog.db
 allow_user_registration: false
 session_timeout_idle_min: 120
 session_timeout_hard_min: 600
-web_port: 8080
+web_port: 8081

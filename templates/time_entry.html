@@ -110,7 +110,15 @@
                   {% if loop.first %}
                     <span class="font-medium">{{ day.weekday }}</span>
                     {{ day.date_label }}
-                    {% if day.is_special %}<span class="text-amber-600 text-xs" title="Spezialtag">★</span>{% endif %}
+                    {% if day.is_special %}
+                    <span class="special-star" tabindex="0" aria-label="Spezialtag">
+                      ★
+                      <span class="special-tooltip" role="tooltip">
+                        <span class="special-tooltip-title">{{ day.special_description or 'Spezialtag' }}</span>
+                        <span class="special-tooltip-meta">Soll: {{ '%.1f'|format(day.target_hours) }} h</span>
+                      </span>
+                    </span>
+                    {% endif %}
                   {% endif %}
                   <input type="hidden" name="entry_date" value="{{ day.entry_date.isoformat() }}">
                   <input type="hidden" name="sort_order" value="{{ entry.sort_order }}">
