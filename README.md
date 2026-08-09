@@ -5,7 +5,7 @@ Zeiterfassungsapplikation für tägliche Arbeitszeiten, Absenzen und das persön
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Flask](https://img.shields.io/badge/Flask-3.1-green)
 ![DuckDB](https://img.shields.io/badge/DuckDB-1.5-yellow)
-![License](https://img.shields.io/badge/license-proprietary-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
 
@@ -134,4 +134,4 @@ docker-compose.yml
 
 ## Lizenz
 
-Proprietär – Nutzung gemäss den Vorgaben des Projektinhabers.
+[MIT](https://opensource.org/licenses/MIT)
