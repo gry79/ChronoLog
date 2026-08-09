@@ -14,17 +14,19 @@ if str(ROOT) not in sys.path:
 
 from app.config import load_config
 from app.db.connection import Database
-from app.logger import log
+from app.logger import configure_web_loggers, log
 from app.web import create_app, init_database
+from app.web.request_log import ChronoLogRequestHandler
 
 
+# FIGlet "standard" font – ChronoLog (verified column alignment)
 ASCII_ART = r"""
-   ____  _                         _                 _
-  / ___| |__  _ __ ___  _ __   ___| |    ___   __ _  | |
- | |   | '_ \| '__/ _ \| '_ \ / _ \ |   / _ \ / _` | | |
- | |___| | | | | | (_) | | | | (_) | |__| (_) | (_| | |_|
-  \____|_| |_|_|  \___/|_| |_|\___/|_____\___/ \__, | (_)
-                                               |___/
+  ____ _                           _
+ / ___| |__  _ __ ___  _ __   ___ | |    ___   __ _
+| |   | '_ \| '__/ _ \| '_ \ / _ \| |   / _ \ / _` |
+| |___| | | | | | (_) | | | | (_) | |__| (_) | (_| |
+ \____|_| |_|_|  \___/|_| |_|\___/|_____\___/ \__, |
+                                              |___/
 """
 
 # Teal-ish color for the banner when TTY supports color
@@ -64,9 +66,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         init_database(db)
         app = create_app(config, db)
+        configure_web_loggers()
         log.info("Starting ChronoLog on port %s", config.web_port)
         # host 0.0.0.0 for Docker; debug off for production safety
-        app.run(host="0.0.0.0", port=config.web_port, debug=False, threaded=True)
+        app.run(
+            host="0.0.0.0",
+            port=config.web_port,
+            debug=False,
+            threaded=True,
+            request_handler=ChronoLogRequestHandler,
+        )
     except KeyboardInterrupt:
         log.info("Shutting down (KeyboardInterrupt)")
     finally:

@@ -9,6 +9,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     url_for,
 )
 
@@ -28,6 +29,13 @@ def index():
     if user:
         return redirect(url_for("time.time_entry"))
     return redirect(url_for("auth.login"))
+
+
+@bp.route("/favicon.ico")
+def favicon():
+    """Browsers often request /favicon.ico at the site root."""
+    static = current_app.static_folder
+    return send_from_directory(static, "favicon.ico", mimetype="image/x-icon")
 
 
 @bp.route("/login", methods=["GET", "POST"])
