@@ -13,6 +13,31 @@ Im Projektverzeichnis (dort, wo das `Dockerfile` liegt):
 docker build -t chronolog:latest .
 ```
 
+## Image von GitHub Actions (GHCR)
+
+Bei jedem Push auf `main` baut der Workflow [`.github/workflows/docker-image.yml`](../.github/workflows/docker-image.yml) das Image und published es in die **GitHub Container Registry**:
+
+```text
+ghcr.io/<github-user>/chronolog:latest
+ghcr.io/<github-user>/chronolog:<git-sha>
+```
+
+Beispiel (Repository-Owner `gry79`):
+
+```bash
+# Optional: anmelden (bei privatem Package nötig)
+echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+
+docker pull ghcr.io/gry79/chronolog:latest
+docker run -d --name chronolog -p 8080:8080 -v chronolog-data:/data ghcr.io/gry79/chronolog:latest
+```
+
+Hinweise:
+
+- Pull Requests bauen das Image nur zur Prüfung, pushen es aber **nicht**.
+- Unter GitHub → *Packages* kann das Package auf **Public** gestellt werden, damit kein Login nötig ist.
+- Beim ersten Publish muss die Package-Sichtbarkeit ggf. einmalig freigeschaltet werden.
+
 ## Container starten (Kommandozeile)
 
 ```bash
