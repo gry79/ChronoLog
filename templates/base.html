@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}ChronoLog{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            chrono: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              200: '#99f6e4',
+              500: '#14b8a6',
+              600: '#0d9488',
+              700: '#0f766e',
+              800: '#115e59',
+              900: '#134e4a',
+              950: '#042f2e',
+            },
+            amberglow: '#f59e0b',
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js"
+          integrity="sha384-H5SrcfygHmAuTDZphMHqBJLc3FhssKjG7w/CeCpFReSfwBWDTKpkzPP8c+cLsK+V"
+          crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800 antialiased">
+  {% if user is defined and user %}
+  <nav class="bg-chrono-900 text-white shadow-lg">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="flex items-center justify-between h-14">
+        <div class="flex items-center gap-6">
+          <a href="{{ url_for('time.time_entry') }}" class="font-semibold tracking-wide text-lg">
+            <span class="text-amberglow">⏱</span> ChronoLog
+          </a>
+          <div class="hidden sm:flex gap-1 text-sm">
+            <a href="{{ url_for('time.time_entry') }}"
+               class="px-3 py-1.5 rounded-md {% if active_nav == 'time' %}bg-chrono-700{% else %}hover:bg-chrono-800{% endif %}">
+              Zeiterfassung
+            </a>
+            <a href="{{ url_for('absence.absences') }}"
+               class="px-3 py-1.5 rounded-md {% if active_nav == 'absences' %}bg-chrono-700{% else %}hover:bg-chrono-800{% endif %}">
+              Absenzen
+            </a>
+            <a href="{{ url_for('settings.settings') }}"
+               class="px-3 py-1.5 rounded-md {% if active_nav == 'settings' %}bg-chrono-700{% else %}hover:bg-chrono-800{% endif %}">
+              Einstellungen
+            </a>
+            {% if user.is_admin %}
+            <div class="relative admin-dropdown">
+              <button type="button"
+                      class="admin-dropdown-btn px-3 py-1.5 rounded-md {% if active_nav and active_nav.startswith('admin') %}bg-chrono-700{% else %}hover:bg-chrono-800{% endif %}"
+                      aria-haspopup="true"
+                      aria-expanded="false">
+                Admin ▾
+              </button>
+              {# pt-1 = hover bridge (no margin gap that closes the menu) #}
+              <div class="admin-dropdown-menu absolute left-0 top-full pt-1 w-44 z-50">
+                <div class="bg-white text-slate-800 rounded-md shadow-lg border border-slate-100 py-1">
+                  <a href="{{ url_for('admin.chronos_list') }}" class="block px-4 py-2 hover:bg-slate-100 text-sm">Chronos</a>
+                  <a href="{{ url_for('admin.users_list') }}" class="block px-4 py-2 hover:bg-slate-100 text-sm">Benutzer</a>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="flex items-center gap-3 text-sm">
+          <span class="text-chrono-200 hidden md:inline">{{ user.first_name }} {{ user.last_name }}</span>
+          <a href="{{ url_for('auth.logout') }}" class="px-3 py-1.5 rounded-md bg-chrono-800 hover:bg-chrono-700">Abmelden</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+  {% endif %}
+
+  <main class="{% block main_class %}max-w-7xl mx-auto px-4 sm:px-6 py-6{% endblock %}">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="mb-4 space-y-2">
+          {% for category, message in messages %}
+            <div class="rounded-lg px-4 py-3 text-sm
+              {% if category == 'error' %}bg-red-50 text-red-800 border border-red-200
+              {% elif category == 'success' %}bg-emerald-50 text-emerald-800 border border-emerald-200
+              {% else %}bg-slate-100 text-slate-700 border border-slate-200{% endif %}">
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

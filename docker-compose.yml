@@ -1,0 +1,17 @@
+services:
+  chronolog:
+    build: .
+    image: chronolog:latest
+    container_name: chronolog
+    ports:
+      - "8080:8080"
+    volumes:
+      - chronolog-data:/data
+    restart: unless-stopped
+    # Optional: override config via bind-mount
+    # volumes:
+    #   - ./config.yaml:/app/config.yaml:ro
+    #   - chronolog-data:/data
+
+volumes:
+  chronolog-data:

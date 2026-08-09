@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Zeiterfassung – ChronoLog{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  <!-- Header -->
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div>
+        <h1 class="text-xl font-semibold text-slate-900">{{ view.user_display_name }}</h1>
+        <div class="flex items-center gap-2 mt-2">
+          {% if view.can_go_prev %}
+          <a href="{{ url_for('time.time_nav', year=view.year, month=view.month, dir='prev') }}"
+             class="btn-icon" title="Vorheriger Monat">◀</a>
+          {% else %}
+          <span class="btn-icon opacity-40 cursor-not-allowed">◀</span>
+          {% endif %}
+          <span class="text-lg font-medium text-chrono-800 min-w-[10rem] text-center">{{ view.label }}</span>
+          {% if view.can_go_next %}
+          <a href="{{ url_for('time.time_nav', year=view.year, month=view.month, dir='next') }}"
+             class="btn-icon" title="Nächster Monat">▶</a>
+          {% else %}
+          <span class="btn-icon opacity-40 cursor-not-allowed" title="Nur nach Monatsabschluss möglich">▶</span>
+          {% endif %}
+          {% if view.is_closed %}
+          <span class="ml-2 text-xs font-medium px-2 py-1 rounded-full bg-slate-200 text-slate-700">Abgeschlossen</span>
+          {% else %}
+          <span class="ml-2 text-xs font-medium px-2 py-1 rounded-full bg-emerald-100 text-emerald-800">Offen</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div class="bg-slate-50 rounded-lg p-3 border border-slate-100">
+          <div class="text-slate-500 text-xs">Soll / Tag</div>
+          <div class="font-semibold text-slate-900">{{ '%.1f'|format(view.daily_target) }} h</div>
+        </div>
+        <div class="bg-slate-50 rounded-lg p-3 border border-slate-100">
+          <div class="text-slate-500 text-xs">Soll / Monat</div>
+          <div class="font-semibold text-slate-900">{{ '%.1f'|format(view.monthly_target) }} h</div>
+        </div>
+        <div class="bg-slate-50 rounded-lg p-3 border border-slate-100">
+          <div class="text-slate-500 text-xs">Zeitkonto Vormonat</div>
+          <div class="font-semibold {% if view.carried_balance < 0 %}text-red-600{% else %}text-slate-900{% endif %}">
+            {{ '%.1f'|format(view.carried_balance) }} h
+          </div>
+        </div>
+        <div class="bg-chrono-50 rounded-lg p-3 border border-chrono-100">
+          <div class="text-chrono-700 text-xs">Aktuelles Zeitkonto</div>
+          <div class="font-semibold {% if view.current_balance < 0 %}text-red-600{% else %}text-chrono-900{% endif %}">
+            {{ '%.1f'|format(view.current_balance) }} h
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-4 flex flex-wrap gap-2">
+      {% if not view.is_closed %}
+      <form method="post" action="{{ url_for('time.time_close') }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="year" value="{{ view.year }}">
+        <input type="hidden" name="month" value="{{ view.month }}">
+        <input type="hidden" name="action" value="close">
+        <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-slate-800 text-white hover:bg-slate-700">
+          Monat abschliessen
+        </button>
+      </form>
+      {% else %}
+      <form method="post" action="{{ url_for('time.time_close') }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="year" value="{{ view.year }}">
+        <input type="hidden" name="month" value="{{ view.month }}">
+        <input type="hidden" name="action" value="open">
+        <button type="submit" class="px-3 py-1.5 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50">
+          Monat editieren
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Time table -->
+  <form method="post" action="{{ url_for('time.time_save') }}" id="time-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="year" value="{{ view.year }}">
+    <input type="hidden" name="month" value="{{ view.month }}">
+    {% for d in expand_list %}
+    <input type="hidden" name="expand" value="{{ d.isoformat() if d.isoformat is defined else d }}">
+    {% endfor %}
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="table-scroll">
+        <table class="min-w-full text-sm">
+          <thead class="bg-chrono-900 text-white">
+            <tr>
+              <th class="px-3 py-2.5 text-left font-medium w-28">Datum</th>
+              <th class="px-3 py-2.5 text-left font-medium w-24">Von</th>
+              <th class="px-3 py-2.5 text-left font-medium w-24">Bis</th>
+              <th class="px-3 py-2.5 text-left font-medium w-24">Total</th>
+              <th class="px-3 py-2.5 text-left font-medium">Beschreibung</th>
+              <th class="px-3 py-2.5 text-center font-medium w-32">Aktionen</th>
+            </tr>
+          </thead>
+          <tbody id="time-body" class="{% if view.is_closed %}opacity-90{% endif %}">
+            {% for day in view.days %}
+              {% for entry in day.entries %}
+              <tr class="border-t border-slate-100 hover:bg-slate-50/80 {% if day.is_expanded_zero %}bg-amber-50/40{% elif loop.first %}{% endif %}"
+                  data-date="{{ day.entry_date.isoformat() }}">
+                <td class="px-3 py-1.5 whitespace-nowrap text-slate-600">
+                  {% if loop.first %}
+                    <span class="font-medium">{{ day.weekday }}</span>
+                    {{ day.date_label }}
+                    {% if day.is_special %}<span class="text-amber-600 text-xs" title="Spezialtag">★</span>{% endif %}
+                  {% endif %}
+                  <input type="hidden" name="entry_date" value="{{ day.entry_date.isoformat() }}">
+                  <input type="hidden" name="sort_order" value="{{ entry.sort_order }}">
+                </td>
+                <td class="px-2 py-1">
+                  <input type="text" name="time_from" value="{{ entry.time_from }}"
+                         class="time-input w-20 border border-slate-300 rounded px-2 py-1 text-sm {% if view.is_closed %}bg-slate-100{% endif %}"
+                         placeholder="hh:mm" maxlength="5"
+                         {% if view.is_closed %}readonly{% endif %}>
+                </td>
+                <td class="px-2 py-1">
+                  <input type="text" name="time_to" value="{{ entry.time_to }}"
+                         class="time-input w-20 border border-slate-300 rounded px-2 py-1 text-sm {% if view.is_closed %}bg-slate-100{% endif %}"
+                         placeholder="hh:mm" maxlength="5"
+                         {% if view.is_closed %}readonly{% endif %}>
+                </td>
+                <td class="px-3 py-1.5 whitespace-nowrap">
+                  <span class="day-total text-slate-700 tabular-nums">{{ '%.1f'|format(entry.total) }} h</span>
+                </td>
+                <td class="px-2 py-1">
+                  <input type="text" name="description" value="{{ entry.description }}" maxlength="256"
+                         class="w-full border border-slate-300 rounded px-2 py-1 text-sm {% if view.is_closed %}bg-slate-100{% endif %}"
+                         {% if view.is_closed %}readonly{% endif %}>
+                </td>
+                <td class="px-2 py-1">
+                  <div class="flex items-center justify-center gap-1">
+                    {% if not view.is_closed %}
+                      {% if entry.show_up %}
+                      <a href="{{ url_for('time.time_expand', year=view.year, month=view.month, date=entry.expand_date, expand=expand_list) }}"
+                         class="btn-icon" title="Freien Tag oberhalb einblenden" data-action="expand-up">↑</a>
+                      {% else %}
+                      <span class="btn-icon btn-icon-spacer" aria-hidden="true" data-action="expand-up">↑</span>
+                      {% endif %}
+                      {% if entry.show_down %}
+                      <a href="{{ url_for('time.time_expand', year=view.year, month=view.month, date=entry.expand_date, expand=expand_list) }}"
+                         class="btn-icon" title="Freien Tag unterhalb einblenden" data-action="expand-down">↓</a>
+                      {% else %}
+                      <span class="btn-icon btn-icon-spacer" aria-hidden="true" data-action="expand-down">↓</span>
+                      {% endif %}
+                      <button type="button" data-action="add-row" class="btn-icon" title="Eintrag hinzufügen">+</button>
+                      <button type="button" data-action="delete-row" class="btn-icon danger" title="Löschen"
+                              {% if not entry.show_delete %}disabled data-required="1"{% endif %}>✕</button>
+                    {% else %}
+                      <span class="text-slate-400 text-xs">—</span>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="6" class="px-4 py-8 text-center text-slate-500">
+                  Keine Arbeitstage in diesem Monat (oder keine Chronos-Konfiguration zugewiesen).
+                  {% if not user.chronos_id %}
+                  <a href="{{ url_for('settings.settings') }}" class="text-chrono-700 underline">Einstellungen öffnen</a>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if not view.is_closed %}
+    <div class="mt-4 flex justify-end">
+      <button type="submit"
+              class="px-5 py-2.5 rounded-lg bg-chrono-800 hover:bg-chrono-700 text-white font-medium shadow">
+        Speichern
+      </button>
+    </div>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}

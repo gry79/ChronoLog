@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Benutzer – Admin – ChronoLog{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <h1 class="text-xl font-semibold text-slate-900">Benutzerverwaltung</h1>
+
+  <div class="grid lg:grid-cols-5 gap-6">
+    <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <h2 class="font-medium text-slate-800 mb-3">Benutzer</h2>
+      <ul class="divide-y divide-slate-100 max-h-[28rem] overflow-y-auto">
+        {% for u in users %}
+        <li class="py-2">
+          <a href="{{ url_for('admin.users_edit', user_id=u.id) }}"
+             class="flex items-center justify-between text-sm hover:bg-slate-50 rounded px-2 py-1">
+            <span>
+              <span class="font-medium text-chrono-800">{{ u.last_name }}, {{ u.first_name }}</span>
+              <span class="text-slate-400 ml-1">@{{ u.username }}</span>
+            </span>
+            <span class="flex gap-1">
+              {% if u.is_admin %}<span class="text-xs bg-amber-100 text-amber-800 px-1.5 rounded">Admin</span>{% endif %}
+              {% if u.is_locked %}<span class="text-xs bg-red-100 text-red-800 px-1.5 rounded">Gesperrt</span>{% endif %}
+            </span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="lg:col-span-3 space-y-6">
+      {% if edit %}
+      <form method="post" action="{{ url_for('admin.users_save') }}"
+            class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="user_id" value="{{ edit.id }}">
+        <h2 class="font-medium text-slate-800">Benutzer bearbeiten: {{ edit.username }}</h2>
+
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Benutzername</label>
+            <input type="text" name="username" value="{{ edit.username }}" required class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">E-Mail</label>
+            <input type="email" name="email" value="{{ edit.email }}" required class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Vorname</label>
+            <input type="text" name="first_name" value="{{ edit.first_name }}" required class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Nachname</label>
+            <input type="text" name="last_name" value="{{ edit.last_name }}" required class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Chronos</label>
+            <select name="chronos_id" class="w-full border rounded-lg px-3 py-2 text-sm">
+              <option value="">—</option>
+              {% for c in all_chronos %}
+              <option value="{{ c.id }}" {% if edit.chronos_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Initiales Zeitkonto</label>
+            <input type="text" name="initial_balance" value="{{ '%.1f'|format(edit.initial_balance) }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Startjahr</label>
+            <input type="number" name="start_year" value="{{ edit.start_year or '' }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Startmonat</label>
+            <input type="number" name="start_month" value="{{ edit.start_month or '' }}" min="1" max="12" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Neues Passwort (optional)</label>
+            <input type="password" name="new_password" minlength="6" class="w-full border rounded-lg px-3 py-2 text-sm" autocomplete="new-password">
+          </div>
+          <div class="flex items-center gap-6 pt-6">
+            <label class="inline-flex items-center gap-2 text-sm">
+              <input type="checkbox" name="is_admin" {% if edit.is_admin %}checked{% endif %} class="rounded">
+              Administrator
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm">
+              <input type="checkbox" name="is_locked" {% if edit.is_locked %}checked{% endif %} class="rounded">
+              Gesperrt
+            </label>
+          </div>
+        </div>
+
+        <button type="submit" class="px-4 py-2 rounded-lg bg-chrono-800 hover:bg-chrono-700 text-white text-sm font-medium">
+          Speichern
+        </button>
+      </form>
+      {% endif %}
+
+      <!-- Create user -->
+      <form method="post" action="{{ url_for('admin.users_create') }}"
+            class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <h2 class="font-medium text-slate-800">Neuen Benutzer anlegen</h2>
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Benutzername</label>
+            <input type="text" name="username" required class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">E-Mail</label>
+            <input type="email" name="email" required class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Vorname</label>
+            <input type="text" name="first_name" required class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Nachname</label>
+            <input type="text" name="last_name" required class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Passwort</label>
+            <input type="password" name="password" required minlength="6" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div class="flex items-center pt-6">
+            <label class="inline-flex items-center gap-2 text-sm">
+              <input type="checkbox" name="is_admin" class="rounded">
+              Administrator
+            </label>
+          </div>
+        </div>
+        <button type="submit" class="px-4 py-2 rounded-lg bg-chrono-800 hover:bg-chrono-700 text-white text-sm font-medium">
+          Anlegen
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

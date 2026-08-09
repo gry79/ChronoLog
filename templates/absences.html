@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Absenzen – ChronoLog{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div>
+        <h1 class="text-xl font-semibold text-slate-900">Absenzerfassung</h1>
+        <div class="flex items-center gap-2 mt-2">
+          {% if can_prev %}
+          <a href="{{ url_for('absence.absences_nav', year=year, month=month, dir='prev') }}" class="btn-icon">◀</a>
+          {% else %}
+          <span class="btn-icon opacity-40">◀</span>
+          {% endif %}
+          <span class="text-lg font-medium text-chrono-800 min-w-[10rem] text-center">{{ label }}</span>
+          {% if can_next %}
+          <a href="{{ url_for('absence.absences_nav', year=year, month=month, dir='next') }}" class="btn-icon">▶</a>
+          {% else %}
+          <span class="btn-icon opacity-40">▶</span>
+          {% endif %}
+        </div>
+      </div>
+      {% if not is_closed %}
+      <button type="button" data-action="add-absence"
+              class="px-3 py-1.5 text-sm rounded-lg bg-chrono-800 text-white hover:bg-chrono-700">
+        + Hinzufügen
+      </button>
+      {% endif %}
+    </div>
+    <p class="text-sm text-slate-500 mt-2">
+      Bei gleichem Von/Bis-Datum kann eine Zeit in Stunden angegeben werden (z.B. Arzttermin).
+      Mehrtägige Absenzen erhalten automatisch die Soll-Stunden pro Tag.
+    </p>
+  </div>
+
+  <form method="post" action="{{ url_for('absence.absences_save') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="year" value="{{ year }}">
+    <input type="hidden" name="month" value="{{ month }}">
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="table-scroll">
+        <table class="min-w-full text-sm">
+          <thead class="bg-chrono-900 text-white">
+            <tr>
+              <th class="px-3 py-2.5 text-left font-medium">Datum von</th>
+              <th class="px-3 py-2.5 text-left font-medium">Datum bis</th>
+              <th class="px-3 py-2.5 text-left font-medium">Zeit (h)</th>
+              <th class="px-3 py-2.5 text-left font-medium">Beschreibung</th>
+              <th class="px-3 py-2.5 text-center font-medium w-20">Aktionen</th>
+            </tr>
+          </thead>
+          <tbody id="absence-body">
+            {% for item in items %}
+            <tr class="border-t border-slate-100">
+              <td class="px-2 py-1">
+                <input type="date" name="date_from" value="{{ item.date_from }}"
+                       class="w-full border rounded px-2 py-1 text-sm {% if is_closed %}bg-slate-100{% endif %}"
+                       {% if is_closed %}readonly{% endif %}>
+              </td>
+              <td class="px-2 py-1">
+                <input type="date" name="date_to" value="{{ item.date_to }}"
+                       class="w-full border rounded px-2 py-1 text-sm {% if is_closed %}bg-slate-100{% endif %}"
+                       {% if is_closed %}readonly{% endif %}>
+              </td>
+              <td class="px-2 py-1">
+                <input type="text" name="hours" value="{{ item.hours }}"
+                       class="w-20 border rounded px-2 py-1 text-sm {% if is_closed %}bg-slate-100{% endif %}"
+                       placeholder="h" {% if is_closed %}readonly{% endif %}>
+              </td>
+              <td class="px-2 py-1">
+                <input type="text" name="description" value="{{ item.description }}" maxlength="256"
+                       class="w-full border rounded px-2 py-1 text-sm {% if is_closed %}bg-slate-100{% endif %}"
+                       {% if is_closed %}readonly{% endif %}>
+              </td>
+              <td class="px-2 py-1 text-center">
+                {% if not is_closed %}
+                <button type="button" data-action="delete-absence" class="btn-icon danger" title="Löschen">✕</button>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if not is_closed %}
+    <div class="mt-4 flex justify-end">
+      <button type="submit" class="px-5 py-2.5 rounded-lg bg-chrono-800 hover:bg-chrono-700 text-white font-medium shadow">
+        Speichern
+      </button>
+    </div>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}
