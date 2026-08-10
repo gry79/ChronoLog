@@ -164,12 +164,34 @@ def time_save():
         )
 
     time_svc = current_app.config["TIME_SVC"]
+    expand_list = _filter_free_day_expands(user, year, month, _parse_expand_form())
+    # Free days present in the submitted form stay expanded on re-render
+    for row in rows:
+        try:
+            d = date.fromisoformat(str(row.get("entry_date") or ""))
+        except ValueError:
+            continue
+        if d not in expand_list and current_app.config["CHRONOS_SVC"].is_free_day(
+            current_app.config["CHRONOS_SVC"].get_for_user(user), d
+        ):
+            expand_list.append(d)
+    expand_list = sorted(set(expand_list))
+
     error = time_svc.save_month_entries(user, year, month, rows)
     if error:
         flash(error, "error")
-        # Keep free-day expands so the user does not lose the opened rows
-        expand_list = _filter_free_day_expands(user, year, month, _parse_expand_form())
-        return redirect(_time_entry_url(year, month, expand_list))
+        # Re-render with submitted values so nothing the user typed is lost
+        view = time_svc.build_month_view(
+            user, year, month, set(expand_list), form_rows=rows
+        )
+        return render_template(
+            "time_entry.html",
+            view=view,
+            user=user,
+            csrf_token=g.csrf_token,
+            active_nav="time",
+            expand_list=expand_list,
+        )
 
     flash("Zeiteinträge gespeichert.", "success")
     # After a successful save free days with data reappear via auto-show from DB.

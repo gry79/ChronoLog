@@ -9,7 +9,6 @@ from typing import Optional
 from app.db.repositories import (
     Chronos,
     MonthClosureRepository,
-    TimeEntry,
     TimeEntryRepository,
     User,
 )
@@ -90,24 +89,63 @@ class TimeService:
         # May only advance if current month is closed
         return self.month_repo.is_closed(user.id, year, month)
 
+    @staticmethod
+    def _safe_duration(time_from: str, time_to: str) -> float:
+        """Duration for display totals; invalid/incomplete times count as 0."""
+        try:
+            tf = parse_time_input(time_from) if time_from else None
+            tt = parse_time_input(time_to) if time_to else None
+            return duration_hours(tf, tt)
+        except ValueError:
+            return 0.0
+
     def build_month_view(
         self,
         user: User,
         year: int,
         month: int,
         expand_dates: Optional[set[date]] = None,
+        form_rows: Optional[list[dict]] = None,
     ) -> MonthView:
+        """
+        Build the month grid. When form_rows is set (e.g. after a failed save),
+        show those submitted values instead of DB data so user input is preserved.
+        """
         year, month = self.clamp_month(user, year, month)
         chronos = self.chronos_service.get_for_user(user)
-        entries = self.time_repo.list_for_month(user.id, year, month)
 
-        by_date: dict[date, list[TimeEntry]] = {}
-        for e in entries:
-            by_date.setdefault(e.entry_date, []).append(e)
+        # by_date: date -> list of entry display dicts
+        by_date: dict[date, list[dict]] = {}
+        if form_rows is not None:
+            for row in form_rows:
+                try:
+                    d = date.fromisoformat(str(row.get("entry_date") or ""))
+                except ValueError:
+                    continue
+                by_date.setdefault(d, []).append(
+                    {
+                        "id": None,
+                        "time_from": row.get("time_from") or "",
+                        "time_to": row.get("time_to") or "",
+                        "description": (row.get("description") or "")[:256],
+                        "sort_order": int(row.get("sort_order") or 0),
+                    }
+                )
+        else:
+            for e in self.time_repo.list_for_month(user.id, year, month):
+                by_date.setdefault(e.entry_date, []).append(
+                    {
+                        "id": e.id,
+                        "time_from": e.time_from or "",
+                        "time_to": e.time_to or "",
+                        "description": e.description or "",
+                        "sort_order": e.sort_order,
+                    }
+                )
 
         # Copy so we never mutate the caller's set (URL expand params stay clean)
         expand = set(expand_dates) if expand_dates else set()
-        # Auto-show free days that already have stored entries (no URL param needed)
+        # Auto-show free days that already have rows (DB or form)
         for d in by_date:
             expand.add(d)
 
@@ -141,16 +179,16 @@ class TimeService:
                 )
             else:
                 for e in day_entries:
-                    dur = duration_hours(e.time_from, e.time_to)
+                    dur = self._safe_duration(e.get("time_from") or "", e.get("time_to") or "")
                     running += dur
                     entry_dicts.append(
                         {
-                            "id": e.id,
-                            "time_from": e.time_from or "",
-                            "time_to": e.time_to or "",
-                            "description": e.description or "",
+                            "id": e.get("id"),
+                            "time_from": e.get("time_from") or "",
+                            "time_to": e.get("time_to") or "",
+                            "description": e.get("description") or "",
                             "total": round(running, 2),
-                            "sort_order": e.sort_order,
+                            "sort_order": e.get("sort_order", 0),
                         }
                     )
 
