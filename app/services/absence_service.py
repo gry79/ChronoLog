@@ -99,8 +99,15 @@ class AbsenceService:
                 if a["date_from"] <= b["date_to"] and b["date_from"] <= a["date_to"]:
                     return "Absenzen dürfen sich nicht überlappen"
 
-        self.absence_repo.delete_for_month(user.id, year, month)
-        self.absence_repo.insert_batch(parsed)
+        try:
+            self.absence_repo.replace_for_month(user.id, year, month, parsed)
+        except Exception as exc:
+            log.exception("Failed to save absences for user=%s %04d-%02d", user.id, year, month)
+            return (
+                "Speichern fehlgeschlagen (Datenbankfehler). "
+                "Bitte Seite neu laden und erneut versuchen. "
+                f"Details: {exc}"
+            )
         log.info(
             "Saved absences for user=%s %04d-%02d (%s rows)",
             user.id,

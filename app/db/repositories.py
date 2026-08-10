@@ -454,14 +454,32 @@ class TimeEntryRepository:
             for r in rows
         ]
 
+    @staticmethod
+    def _month_bounds(year: int, month: int) -> tuple[date, date]:
+        start = date(year, month, 1)
+        if month == 12:
+            end = date(year + 1, 1, 1)
+        else:
+            end = date(year, month + 1, 1)
+        return start, end
+
     def delete_for_month(self, user_id: int, year: int, month: int) -> None:
-        self.db.execute(
-            """
-            DELETE FROM time_entries
-            WHERE user_id = ? AND year(entry_date) = ? AND month(entry_date) = ?
-            """,
-            [user_id, year, month],
-        )
+        """
+        Delete by primary key (not year()/month() + secondary index).
+        Avoids DuckDB FatalException: Failed to delete all rows from index.
+        """
+        start, end = self._month_bounds(year, month)
+        ids = [
+            int(r[0])
+            for r in self.db.fetchall(
+                """
+                SELECT id FROM time_entries
+                WHERE user_id = ? AND entry_date >= ? AND entry_date < ?
+                """,
+                [user_id, start, end],
+            )
+        ]
+        self._delete_ids("time_entries", ids)
 
     def insert_batch(self, entries: list[dict]) -> None:
         for e in entries:
@@ -482,6 +500,35 @@ class TimeEntryRepository:
                     e.get("description") or "",
                     e.get("sort_order", 0),
                 ],
+            )
+
+    def replace_for_month(
+        self, user_id: int, year: int, month: int, entries: list[dict]
+    ) -> None:
+        """Atomically replace all entries for a user/month."""
+        self.db.begin()
+        try:
+            self.delete_for_month(user_id, year, month)
+            self.insert_batch(entries)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def _delete_ids(self, table: str, ids: list[int]) -> None:
+        if not ids:
+            return
+        # Chunk to keep statements small; delete by PK avoids secondary-index bugs
+        chunk_size = 200
+        allowed = {"time_entries", "absences"}
+        if table not in allowed:
+            raise ValueError(f"Refusing delete on unexpected table: {table}")
+        for i in range(0, len(ids), chunk_size):
+            chunk = ids[i : i + chunk_size]
+            placeholders = ", ".join("?" * len(chunk))
+            self.db.execute(
+                f"DELETE FROM {table} WHERE id IN ({placeholders})",
+                chunk,
             )
 
 
@@ -570,14 +617,32 @@ class AbsenceRepository:
         return [self._from_row(r) for r in rows]
 
     def delete_for_month(self, user_id: int, year: int, month: int) -> None:
-        """Delete absences whose date_from falls in the given month."""
-        self.db.execute(
-            """
-            DELETE FROM absences
-            WHERE user_id = ? AND year(date_from) = ? AND month(date_from) = ?
-            """,
-            [user_id, year, month],
-        )
+        """Delete absences whose date_from falls in the given month (by primary key)."""
+        start = date(year, month, 1)
+        if month == 12:
+            end = date(year + 1, 1, 1)
+        else:
+            end = date(year, month + 1, 1)
+        ids = [
+            int(r[0])
+            for r in self.db.fetchall(
+                """
+                SELECT id FROM absences
+                WHERE user_id = ? AND date_from >= ? AND date_from < ?
+                """,
+                [user_id, start, end],
+            )
+        ]
+        if not ids:
+            return
+        chunk_size = 200
+        for i in range(0, len(ids), chunk_size):
+            chunk = ids[i : i + chunk_size]
+            placeholders = ", ".join("?" * len(chunk))
+            self.db.execute(
+                f"DELETE FROM absences WHERE id IN ({placeholders})",
+                chunk,
+            )
 
     def insert_batch(self, items: list[dict]) -> None:
         for a in items:
@@ -598,6 +663,18 @@ class AbsenceRepository:
                     a.get("description") or "",
                 ],
             )
+
+    def replace_for_month(
+        self, user_id: int, year: int, month: int, items: list[dict]
+    ) -> None:
+        self.db.begin()
+        try:
+            self.delete_for_month(user_id, year, month)
+            self.insert_batch(items)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
     def has_overlap_with_dates(
         self, user_id: int, date_from: date, date_to: date, exclude_ids: set[int] | None = None

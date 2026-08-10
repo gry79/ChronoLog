@@ -370,8 +370,15 @@ class TimeService:
                 )
             # else: expanded zero day with no data – drop it
 
-        self.time_repo.delete_for_month(user.id, year, month)
-        self.time_repo.insert_batch(final)
+        try:
+            self.time_repo.replace_for_month(user.id, year, month, final)
+        except Exception as exc:
+            log.exception("Failed to save time entries for user=%s %04d-%02d", user.id, year, month)
+            return (
+                "Speichern fehlgeschlagen (Datenbankfehler). "
+                "Bitte Seite neu laden und erneut versuchen. "
+                f"Details: {exc}"
+            )
         log.info("Saved time entries for user=%s %04d-%02d (%s rows)", user.id, year, month, len(final))
         return None
 

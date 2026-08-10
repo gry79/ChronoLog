@@ -130,6 +130,17 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             """,
         ],
     ),
+    (
+        2,
+        "Drop secondary indexes that can break DuckDB DELETE (ART index bug)",
+        [
+            # DuckDB 1.x can raise FatalException on DELETE with secondary indexes
+            # ("Failed to delete all rows from index"). Primary keys remain.
+            "DROP INDEX IF EXISTS idx_time_entries_user_date",
+            "DROP INDEX IF EXISTS idx_absences_user",
+            "DROP INDEX IF EXISTS idx_sessions_user",
+        ],
+    ),
 ]
 
 
@@ -151,12 +162,21 @@ def run_migrations(db: Database) -> None:
 
     if not pending:
         log.info("Database schema is up to date (version %s)", current)
+        # Still try to drop known-bad indexes if a prior fatal left them broken
+        _ensure_safe_indexes(db)
         return
 
     for version, description, statements in pending:
         log.info("Applying migration v%s: %s", version, description)
         for sql in statements:
-            db.execute(sql)
+            try:
+                db.execute(sql)
+            except Exception as exc:
+                log.warning("Migration statement failed (continuing): %s – %s", sql, exc)
+                try:
+                    db.reconnect()
+                except Exception:
+                    pass
         # Ensure migrations table exists before insert (v1 creates it first)
         db.execute(
             """
@@ -168,3 +188,21 @@ def run_migrations(db: Database) -> None:
         log.info("Migration v%s applied successfully", version)
 
     log.info("All migrations complete (now at version %s)", pending[-1][0])
+    _ensure_safe_indexes(db)
+
+
+def _ensure_safe_indexes(db: Database) -> None:
+    """Idempotent cleanup for DuckDB ART index DELETE issues."""
+    for idx in (
+        "idx_time_entries_user_date",
+        "idx_absences_user",
+        "idx_sessions_user",
+    ):
+        try:
+            db.execute(f"DROP INDEX IF EXISTS {idx}")
+        except Exception as exc:
+            log.warning("Could not drop index %s: %s", idx, exc)
+            try:
+                db.reconnect()
+            except Exception:
+                pass
