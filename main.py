@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import signal
 import sys
+import threading
 from pathlib import Path
 
 # Ensure project root is on sys.path when started as script
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from werkzeug.serving import make_server
 
 from app.config import load_config
 from app.db.connection import Database
@@ -63,23 +67,43 @@ def main(argv: list[str] | None = None) -> int:
 
     db = Database(config.db_path)
     db.connect()
+    httpd = None
     try:
         init_database(db)
         app = create_app(config, db)
         configure_web_loggers()
         log.info("Starting ChronoLog on port %s", config.web_port)
-        # host 0.0.0.0 for Docker; debug off for production safety
-        app.run(
-            host="0.0.0.0",
-            port=config.web_port,
-            debug=False,
+
+        # make_server + explicit signal handling so Docker SIGTERM stops quickly
+        # (app.run() reacts well to Ctrl-C/SIGINT, but not always to SIGTERM).
+        httpd = make_server(
+            "0.0.0.0",
+            config.web_port,
+            app,
             threaded=True,
             request_handler=ChronoLogRequestHandler,
         )
+
+        def _request_shutdown(signum: int, _frame) -> None:
+            name = signal.Signals(signum).name if hasattr(signal, "Signals") else str(signum)
+            log.info("Shutting down (%s)", name)
+            # shutdown() must not run on the request-handling thread
+            threading.Thread(target=httpd.shutdown, daemon=True).start()
+
+        signal.signal(signal.SIGTERM, _request_shutdown)
+        signal.signal(signal.SIGINT, _request_shutdown)
+
+        httpd.serve_forever()
     except KeyboardInterrupt:
         log.info("Shutting down (KeyboardInterrupt)")
     finally:
+        if httpd is not None:
+            try:
+                httpd.server_close()
+            except Exception:
+                pass
         db.close()
+        log.info("ChronoLog stopped")
     return 0
 
 

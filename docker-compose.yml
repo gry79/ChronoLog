@@ -8,6 +8,8 @@ services:
     volumes:
       - chronolog-data:/data
     restart: unless-stopped
+    # Exit promptly on compose down (app handles SIGTERM; don't wait full 10s)
+    stop_grace_period: 3s
     # Optional: override config via bind-mount
     # volumes:
     #   - ./config.yaml:/app/config.yaml:ro

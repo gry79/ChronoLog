@@ -66,6 +66,8 @@ docker stop chronolog
 docker rm chronolog
 ```
 
+`docker compose down` / `docker stop` senden **SIGTERM**. ChronoLog beendet den Webserver daraufhin bewusst (nicht erst nach dem Docker-Default-Timeout von ~10 s).
+
 Volume (inkl. Datenbank) entfernen:
 
 ```bash
