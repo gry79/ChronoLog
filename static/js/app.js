@@ -131,9 +131,13 @@
     var date = tr.getAttribute("data-date");
     var tbody = tr.parentElement;
     var clone = tr.cloneNode(true);
+    // Only the first row of a day shows the date (same as after reload)
+    clone.querySelectorAll(".day-label").forEach(function (el) {
+      el.remove();
+    });
     clone.querySelectorAll("input").forEach(function (inp) {
       if (inp.name === "entry_date") {
-        inp.value = date;
+        inp.value = date; // keep hidden date for submit
       } else if (inp.name === "time_from" || inp.name === "time_to" || inp.name === "description") {
         inp.value = "";
       } else if (inp.name === "sort_order") {
@@ -151,25 +155,29 @@
       spacer.textContent = b.textContent.trim() || (b.getAttribute("data-action") === "expand-up" ? "↑" : "↓");
       b.replaceWith(spacer);
     });
-    var del = clone.querySelector("[data-action='delete-row']");
-    if (del) del.disabled = false;
     tr.after(clone);
     recomputeDayTotals(tbody);
   });
 
-  // Delete row
+  // Delete row – last row of a day clears fields instead of removing the shell
   document.addEventListener("click", function (e) {
     var btn = e.target.closest("[data-action='delete-row']");
-    if (!btn || btn.disabled) return;
+    if (!btn) return;
     e.preventDefault();
     var tr = btn.closest("tr");
+    if (!tr) return;
     var tbody = tr.parentElement;
     var date = tr.getAttribute("data-date");
     var siblings = tbody.querySelectorAll('tr[data-date="' + date + '"]');
-    if (siblings.length <= 1 && btn.getAttribute("data-required") === "1") {
-      return;
+    if (siblings.length > 1) {
+      tr.remove();
+    } else {
+      tr.querySelectorAll('input[name="time_from"], input[name="time_to"], input[name="description"]').forEach(
+        function (inp) {
+          inp.value = "";
+        }
+      );
     }
-    tr.remove();
     recomputeDayTotals(tbody);
   });
 

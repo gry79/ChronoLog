@@ -206,7 +206,7 @@ class TimeService:
             n = len(day.entries)
             for i, e in enumerate(day.entries):
                 e["show_plus"] = True
-                e["show_delete"] = not (n == 1 and not day.is_expanded_zero)
+                e["show_delete"] = True  # last workday row clears fields in UI, does not remove shell
                 e["show_up"] = False
                 e["show_down"] = False
                 e["expand_date_up"] = None

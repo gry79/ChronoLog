@@ -108,6 +108,7 @@
                   data-date="{{ day.entry_date.isoformat() }}">
                 <td class="px-3 py-1.5 whitespace-nowrap text-slate-600">
                   {% if loop.first %}
+                  <span class="day-label">
                     <span class="font-medium">{{ day.weekday }}</span>
                     {{ day.date_label }}
                     {% if day.is_special %}
@@ -119,6 +120,7 @@
                       </span>
                     </span>
                     {% endif %}
+                  </span>
                   {% endif %}
                   <input type="hidden" name="entry_date" value="{{ day.entry_date.isoformat() }}">
                   <input type="hidden" name="sort_order" value="{{ entry.sort_order }}">
@@ -159,8 +161,8 @@
                       <span class="btn-icon btn-icon-spacer" aria-hidden="true" data-action="expand-down">↓</span>
                       {% endif %}
                       <button type="button" data-action="add-row" class="btn-icon" title="Eintrag hinzufügen">+</button>
-                      <button type="button" data-action="delete-row" class="btn-icon danger" title="Löschen"
-                              {% if not entry.show_delete %}disabled data-required="1"{% endif %}>✕</button>
+                      <button type="button" data-action="delete-row" class="btn-icon danger"
+                              title="Löschen{% if not day.is_expanded_zero %} (letzte Zeile leert die Eingaben){% endif %}">✕</button>
                     {% else %}
                       <span class="text-slate-400 text-xs">—</span>
                     {% endif %}
