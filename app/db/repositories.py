@@ -136,8 +136,7 @@ class UserRepository:
         password_hash: str,
         is_admin: bool = False,
     ) -> User:
-        row = self.db.fetchone("SELECT nextval('users_id_seq')")
-        user_id = int(row[0])
+        user_id = self.db.allocate_id("users", "users_id_seq")
         self.db.execute(
             """
             INSERT INTO users (
@@ -308,8 +307,7 @@ class ChronosRepository:
         return Chronos(id=row[0], name=row[1], daily_target_hours=float(row[2]))
 
     def create(self, name: str, daily_target_hours: float) -> Chronos:
-        row = self.db.fetchone("SELECT nextval('chronos_id_seq')")
-        cid = int(row[0])
+        cid = self.db.allocate_id("chronos", "chronos_id_seq")
         self.db.execute(
             "INSERT INTO chronos (id, name, daily_target_hours) VALUES (?, ?, ?)",
             [cid, name, daily_target_hours],
@@ -361,8 +359,7 @@ class ChronosRepository:
         target_hours: float,
         description: str,
     ) -> SpecialDay:
-        row = self.db.fetchone("SELECT nextval('chronos_special_days_id_seq')")
-        sid = int(row[0])
+        sid = self.db.allocate_id("chronos_special_days", "chronos_special_days_id_seq")
         self.db.execute(
             """
             INSERT INTO chronos_special_days
@@ -483,8 +480,7 @@ class TimeEntryRepository:
 
     def insert_batch(self, entries: list[dict]) -> None:
         for e in entries:
-            row = self.db.fetchone("SELECT nextval('time_entries_id_seq')")
-            eid = int(row[0])
+            eid = self.db.allocate_id("time_entries", "time_entries_id_seq")
             self.db.execute(
                 """
                 INSERT INTO time_entries
@@ -646,8 +642,7 @@ class AbsenceRepository:
 
     def insert_batch(self, items: list[dict]) -> None:
         for a in items:
-            row = self.db.fetchone("SELECT nextval('absences_id_seq')")
-            aid = int(row[0])
+            aid = self.db.allocate_id("absences", "absences_id_seq")
             self.db.execute(
                 """
                 INSERT INTO absences

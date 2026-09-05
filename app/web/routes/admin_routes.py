@@ -296,13 +296,17 @@ def users_create():
         return redirect(url_for("admin.users_list"))
 
     is_admin = request.form.get("is_admin") == "on"
-    user = current_app.config["USERS"].create(
-        username=username,
-        first_name=first_name,
-        last_name=last_name,
-        email=email,
-        password_hash=hash_password(password),
-        is_admin=is_admin,
-    )
+    try:
+        user = current_app.config["USERS"].create(
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            password_hash=hash_password(password),
+            is_admin=is_admin,
+        )
+    except Exception as exc:
+        flash(f"Benutzer konnte nicht angelegt werden: {exc}", "error")
+        return redirect(url_for("admin.users_list"))
     flash(f"Benutzer {user.username} angelegt.", "success")
     return redirect(url_for("admin.users_edit", user_id=user.id))

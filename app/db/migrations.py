@@ -164,6 +164,7 @@ def run_migrations(db: Database) -> None:
         log.info("Database schema is up to date (version %s)", current)
         # Still try to drop known-bad indexes if a prior fatal left them broken
         _ensure_safe_indexes(db)
+        _sync_sequences(db)
         return
 
     for version, description, statements in pending:
@@ -189,6 +190,7 @@ def run_migrations(db: Database) -> None:
 
     log.info("All migrations complete (now at version %s)", pending[-1][0])
     _ensure_safe_indexes(db)
+    _sync_sequences(db)
 
 
 def _ensure_safe_indexes(db: Database) -> None:
@@ -202,6 +204,40 @@ def _ensure_safe_indexes(db: Database) -> None:
             db.execute(f"DROP INDEX IF EXISTS {idx}")
         except Exception as exc:
             log.warning("Could not drop index %s: %s", idx, exc)
+            try:
+                db.reconnect()
+            except Exception:
+                pass
+
+
+# table -> sequence (must stay in sync with Database.allocate_id)
+_TABLE_SEQUENCES: tuple[tuple[str, str], ...] = (
+    ("users", "users_id_seq"),
+    ("chronos", "chronos_id_seq"),
+    ("chronos_special_days", "chronos_special_days_id_seq"),
+    ("time_entries", "time_entries_id_seq"),
+    ("absences", "absences_id_seq"),
+)
+
+
+def _sync_sequences(db: Database) -> None:
+    """
+    Recreate sequences so nextval() starts after MAX(id).
+
+    DuckDB has no setval(); sequences can lag behind existing rows (e.g. after
+    restores or interrupted writes), causing duplicate primary key errors.
+    """
+    for table, sequence in _TABLE_SEQUENCES:
+        try:
+            row = db.fetchone(f"SELECT COALESCE(MAX(id), 0) FROM {table}")
+            max_id = int(row[0]) if row else 0
+            start = max(max_id + 1, 1)
+            db.execute(f"DROP SEQUENCE IF EXISTS {sequence}")
+            db.execute(f"CREATE SEQUENCE {sequence} START {start}")
+            log.info("Synced sequence %s to start at %s (max %s.id=%s)", sequence, start, table, max_id)
+        except Exception as exc:
+            # Table may not exist yet on brand-new DBs mid-migration
+            log.warning("Could not sync sequence %s: %s", sequence, exc)
             try:
                 db.reconnect()
             except Exception:

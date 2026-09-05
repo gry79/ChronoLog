@@ -116,3 +116,41 @@ class Database:
                 self.reconnect()
             except Exception:
                 pass
+
+    def allocate_id(self, table: str, sequence: str) -> int:
+        """
+        Allocate a new integer primary key.
+
+        DuckDB sequences can drift behind MAX(id) (e.g. after restores or
+        failed writes). Always ensure the returned id is greater than MAX(id).
+        """
+        allowed = {
+            "users": "users_id_seq",
+            "chronos": "chronos_id_seq",
+            "chronos_special_days": "chronos_special_days_id_seq",
+            "time_entries": "time_entries_id_seq",
+            "absences": "absences_id_seq",
+        }
+        if table not in allowed or allowed[table] != sequence:
+            raise ValueError(f"Refusing allocate_id for unexpected table/sequence: {table}/{sequence}")
+
+        with self._lock:
+            max_row = self.conn.execute(
+                f"SELECT COALESCE(MAX(id), 0) FROM {table}"
+            ).fetchone()
+            max_id = int(max_row[0]) if max_row else 0
+            nid = int(self.conn.execute(f"SELECT nextval('{sequence}')").fetchone()[0])
+            # Cap the catch-up loop (should be tiny; guards against runaway)
+            for _ in range(max(max_id + 2, 8)):
+                if nid > max_id:
+                    return nid
+                nid = int(self.conn.execute(f"SELECT nextval('{sequence}')").fetchone()[0])
+            # Fallback if sequence is badly broken: use max+1 without sequence
+            log.warning(
+                "Sequence %s lagged behind %s (max_id=%s); using max_id+1=%s",
+                sequence,
+                table,
+                max_id,
+                max_id + 1,
+            )
+            return max_id + 1
