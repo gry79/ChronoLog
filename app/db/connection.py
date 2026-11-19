@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Iterator, Optional, Sequence
 
 import duckdb
 
@@ -84,12 +85,47 @@ class Database:
         with self._lock:
             try:
                 cur = self.conn.execute(sql) if params is None else self.conn.execute(sql, list(params))
-                return cur.fetchone()
+                row = cur.fetchone()
+                # DuckDB 2 keeps a result open until a fetch returns no rows.
+                # Drain it so the next statement on this connection can run.
+                self._drain_result(cur)
+                return row
             except Exception as exc:
                 if self._is_fatal(exc):
                     log.error("DuckDB fatal error on fetchone – reconnecting: %s", exc)
                     self.reconnect()
                 raise
+
+    @staticmethod
+    def _drain_result(cur: Any) -> None:
+        try:
+            cur.fetchall()
+        except Exception:
+            pass
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Run a block as one transaction, holding the connection lock throughout.
+
+        The lock must cover the whole transaction. Releasing it between
+        statements lets another request run on the same connection and join
+        the open transaction.
+        """
+        with self._lock:
+            self.conn.execute("BEGIN TRANSACTION")
+            try:
+                yield
+            except Exception:
+                try:
+                    self.conn.execute("ROLLBACK")
+                except Exception:
+                    try:
+                        self.reconnect()
+                    except Exception:
+                        pass
+                raise
+            else:
+                self.conn.execute("COMMIT")
 
     def executemany(self, sql: str, params_seq: Sequence[Sequence[Any]]) -> None:
         with self._lock:
@@ -100,22 +136,6 @@ class Database:
                     log.error("DuckDB fatal error on executemany – reconnecting: %s", exc)
                     self.reconnect()
                 raise
-
-    def begin(self) -> None:
-        self.execute("BEGIN TRANSACTION")
-
-    def commit(self) -> None:
-        self.execute("COMMIT")
-
-    def rollback(self) -> None:
-        try:
-            self.execute("ROLLBACK")
-        except Exception:
-            # Connection may already be dead; reconnect leaves a clean session
-            try:
-                self.reconnect()
-            except Exception:
-                pass
 
     def allocate_id(self, table: str, sequence: str) -> int:
         """
@@ -135,16 +155,14 @@ class Database:
             raise ValueError(f"Refusing allocate_id for unexpected table/sequence: {table}/{sequence}")
 
         with self._lock:
-            max_row = self.conn.execute(
-                f"SELECT COALESCE(MAX(id), 0) FROM {table}"
-            ).fetchone()
+            max_row = self.fetchone(f"SELECT COALESCE(MAX(id), 0) FROM {table}")
             max_id = int(max_row[0]) if max_row else 0
-            nid = int(self.conn.execute(f"SELECT nextval('{sequence}')").fetchone()[0])
+            nid = int(self.fetchone(f"SELECT nextval('{sequence}')")[0])
             # Cap the catch-up loop (should be tiny; guards against runaway)
             for _ in range(max(max_id + 2, 8)):
                 if nid > max_id:
                     return nid
-                nid = int(self.conn.execute(f"SELECT nextval('{sequence}')").fetchone()[0])
+                nid = int(self.fetchone(f"SELECT nextval('{sequence}')")[0])
             # Fallback if sequence is badly broken: use max+1 without sequence
             log.warning(
                 "Sequence %s lagged behind %s (max_id=%s); using max_id+1=%s",

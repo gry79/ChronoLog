@@ -141,7 +141,7 @@ def time_save():
         year = int(request.form.get("year", 0))
         month = int(request.form.get("month", 0))
     except ValueError:
-        flash("Invalid month", "error")
+        flash("Ungültiger Monat.", "error")
         return redirect(url_for("time.time_entry"))
 
     # Parse repeated form fields: dates[], from[], to[], desc[], sort[]
@@ -215,13 +215,20 @@ def time_close():
         return redirect(url_for("time.time_entry"))
 
     user = g.current_user
-    year = int(request.form.get("year"))
-    month = int(request.form.get("month"))
+    try:
+        year = int(request.form.get("year", ""))
+        month = int(request.form.get("month", ""))
+    except (TypeError, ValueError):
+        flash("Ungültiger Monat.", "error")
+        return redirect(url_for("time.time_entry"))
     action = request.form.get("action", "close")
     time_svc = current_app.config["TIME_SVC"]
-    time_svc.set_month_closed(user, year, month, closed=(action == "close"))
-    flash(
-        "Monat abgeschlossen." if action == "close" else "Monat wieder geöffnet.",
-        "success",
-    )
+    error = time_svc.set_month_closed(user, year, month, closed=(action == "close"))
+    if error:
+        flash(error, "error")
+    else:
+        flash(
+            "Monat abgeschlossen." if action == "close" else "Monat wieder geöffnet.",
+            "success",
+        )
     return redirect(url_for("time.time_entry", year=year, month=month))

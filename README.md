@@ -2,9 +2,9 @@
 
 Zeiterfassungsapplikation für tägliche Arbeitszeiten, Absenzen und das persönliche Zeitkonto (Über-/Minusstunden) basierend auf konfigurierbaren Soll-Arbeitszeiten (**Chronos**).
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
 ![Flask](https://img.shields.io/badge/Flask-3.1-green)
-![DuckDB](https://img.shields.io/badge/DuckDB-1.5-yellow)
+![DuckDB](https://img.shields.io/badge/DuckDB-2.0-yellow)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features

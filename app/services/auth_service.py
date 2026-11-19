@@ -18,6 +18,9 @@ from app.security import (
 )
 from app.services.time_utils import now_local
 
+# Valid bcrypt hash so a missing user takes about as long as a real check.
+_DUMMY_PASSWORD_HASH = hash_password("chronolog-dummy-password")
+
 
 class AuthService:
     def __init__(
@@ -89,8 +92,13 @@ class AuthService:
         Generic error for invalid credentials (OWASP).
         """
         username = (username or "").strip()
+        self._purge_expired_sessions()
         user = self.users.get_by_username(username)
-        if not user or not verify_password(password, user.password_hash):
+        if user is None:
+            verify_password(password or "", _DUMMY_PASSWORD_HASH)
+            log.warning("Failed login attempt for username=%s", username)
+            return None, "Ungültige Login Daten", None
+        if not verify_password(password, user.password_hash):
             log.warning("Failed login attempt for username=%s", username)
             return None, "Ungültige Login Daten", None
         if user.is_locked:
@@ -188,8 +196,13 @@ class AuthService:
         if err:
             return err
         self.users.update_password(user.id, hash_password(new_pw))
+        self.sessions.delete_for_user(user.id)
         log.info("Password changed for user id=%s", user.id)
         return None
+
+    def _purge_expired_sessions(self) -> None:
+        cutoff = now_local() - timedelta(minutes=self.config.session_timeout_idle_min)
+        self.sessions.delete_expired(cutoff)
 
     def admin_reset_password(self, user_id: int, new_pw: str) -> Optional[str]:
         err = validate_password(new_pw)

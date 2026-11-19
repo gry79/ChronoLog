@@ -34,6 +34,9 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 def validate_password(password: str) -> Optional[str]:
     """Return an error message if the password is invalid, else None."""
+    # bcrypt 5 rejects secrets longer than 72 bytes instead of truncating them.
+    if len(password.encode("utf-8")) > 72:
+        return "Das Passwort darf höchstens 72 Bytes lang sein"
     if len(password) < _PASSWORD_MIN_LEN:
         return f"Das Passwort muss mindestens {_PASSWORD_MIN_LEN} Zeichen lang sein"
     if not _PASSWORD_HAS_LETTER.search(password):
@@ -60,7 +63,10 @@ def generate_csrf_token() -> str:
 
 
 def constant_time_equals(a: str, b: str) -> bool:
-    return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+    try:
+        return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+    except (TypeError, ValueError):
+        return False
 
 
 def hash_token(token: str) -> str:

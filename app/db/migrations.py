@@ -173,11 +173,14 @@ def run_migrations(db: Database) -> None:
             try:
                 db.execute(sql)
             except Exception as exc:
-                log.warning("Migration statement failed (continuing): %s – %s", sql, exc)
+                log.error("Migration v%s failed: %s – %s", version, sql, exc)
                 try:
                     db.reconnect()
                 except Exception:
                     pass
+                raise RuntimeError(
+                    f"Migration v{version} ({description}) failed"
+                ) from exc
         # Ensure migrations table exists before insert (v1 creates it first)
         db.execute(
             """

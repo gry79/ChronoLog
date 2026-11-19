@@ -32,8 +32,10 @@ def create_app(config: AppConfig, db: Database) -> Flask:
         template_folder=str(root / "templates"),
         static_folder=str(root / "static"),
     )
-    # Secret key for Flask flash messages / signing – sessions are server-side
-    app.config["SECRET_KEY"] = _ensure_secret(root / "data" / ".secret_key")
+    # Secret key for Flask flash messages / signing – sessions are server-side.
+    # Keep it next to the database so a Docker volume on the db directory
+    # persists it (the image documents /data for both).
+    app.config["SECRET_KEY"] = _ensure_secret(config.db_path.parent / ".secret_key")
     app.config["APP_CONFIG"] = config
     app.config["DB"] = db
 

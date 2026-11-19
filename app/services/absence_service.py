@@ -8,7 +8,13 @@ from typing import Optional
 from app.db.repositories import AbsenceRepository, TimeEntryRepository, User
 from app.logger import log
 from app.services.chronos_service import ChronosService
-from app.services.time_utils import daterange, duration_hours
+from app.services.time_utils import (
+    daterange,
+    duration_hours,
+    effective_start,
+    parse_decimal,
+    validate_month_view,
+)
 
 
 class AbsenceService:
@@ -42,6 +48,11 @@ class AbsenceService:
     def save_for_month(
         self, user: User, year: int, month: int, raw_rows: list[dict]
     ) -> Optional[str]:
+        window = validate_month_view(
+            year, month, effective_start(user.start_year, user.start_month)
+        )
+        if window:
+            return window
         chronos = self.chronos_service.get_for_user(user)
         if not chronos:
             return "Bitte zuerst eine Chronos-Konfiguration in den Einstellungen wählen"
@@ -60,6 +71,8 @@ class AbsenceService:
 
             if df.year != year or df.month != month:
                 return "Das Startdatum muss im gewählten Monat liegen"
+            if dt.year != year or dt.month != month:
+                return "Das Enddatum muss im gewählten Monat liegen"
             if dt < df:
                 return "Enddatum muss am oder nach dem Startdatum liegen"
 
@@ -68,7 +81,7 @@ class AbsenceService:
             if df == dt:
                 if hours_raw not in (None, ""):
                     try:
-                        hours = float(str(hours_raw).replace(",", "."))
+                        hours = parse_decimal(str(hours_raw))
                     except ValueError:
                         return "Ungültiger Stundenwert"
                     if hours < 0:
@@ -99,14 +112,30 @@ class AbsenceService:
                 if a["date_from"] <= b["date_to"] and b["date_from"] <= a["date_to"]:
                     return "Absenzen dürfen sich nicht überlappen"
 
+        # Rows stored under another month (date_from outside this month) are kept.
+        month_start = date(year, month, 1)
+        if month == 12:
+            month_end = date(year + 1, 1, 1)
+        else:
+            month_end = date(year, month + 1, 1)
+        replaced_ids = {
+            item.id
+            for item in self.absence_repo.list_all_for_user(user.id)
+            if month_start <= item.date_from < month_end
+        }
+        for item in parsed:
+            if self.absence_repo.has_overlap_with_dates(
+                user.id, item["date_from"], item["date_to"], replaced_ids
+            ):
+                return "Absenzen dürfen sich nicht überlappen"
+
         try:
             self.absence_repo.replace_for_month(user.id, year, month, parsed)
-        except Exception as exc:
+        except Exception:
             log.exception("Failed to save absences for user=%s %04d-%02d", user.id, year, month)
             return (
                 "Speichern fehlgeschlagen (Datenbankfehler). "
-                "Bitte Seite neu laden und erneut versuchen. "
-                f"Details: {exc}"
+                "Bitte Seite neu laden und erneut versuchen."
             )
         log.info(
             "Saved absences for user=%s %04d-%02d (%s rows)",
@@ -125,7 +154,7 @@ class AbsenceService:
                 for e in self.time_repo.list_for_date(user_id, df)
             )
             abs_h = hours if hours is not None else target
-            if worked + abs_h > target + 1e-9:
+            if round(worked + abs_h, 2) > round(target, 2):
                 return (
                     f"Am {df.strftime('%d.%m.%Y')}: Zeiteinträge ({worked:.1f}h) + "
                     f"Absenz ({abs_h:.1f}h) überschreiten die Soll-Arbeitszeit ({target:.1f}h)"

@@ -91,8 +91,12 @@ def absences_save():
         return redirect(url_for("absence.absences"))
 
     user = g.current_user
-    year = int(request.form.get("year"))
-    month = int(request.form.get("month"))
+    try:
+        year = int(request.form.get("year", ""))
+        month = int(request.form.get("month", ""))
+    except (TypeError, ValueError):
+        flash("Ungültiger Monat.", "error")
+        return redirect(url_for("absence.absences"))
 
     if current_app.config["TIME_SVC"].month_repo.is_closed(user.id, year, month):
         flash("Monat ist abgeschlossen und kann nicht bearbeitet werden.", "error")

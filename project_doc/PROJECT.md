@@ -151,10 +151,12 @@ Server-seitig: **Flask** mit Jinja2-Templates, HTMX und Tailwind CSS (CDN). Sess
 Benutzeroberfläche und Fehlermeldungen: **Deutsch**. Code, Kommentare und Logs: **Englisch**.
 
 ### Technologien (Stand Implementierung)
-- DuckDB Python: 1.5.5
-- HTMX: 2.0.10
+- Python: 3.11+ (Docker-Image: 3.14)
+- DuckDB Python: 2.0.0
+- HTMX: 2.0.11
 - Tailwind CSS: Play CDN (v4-Linie)
 - Flask: 3.1.3
+- Werkzeug: 3.1.9
 - bcrypt: 5.0.0
 
 ### Monat-Navigation

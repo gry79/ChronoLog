@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Optional
 
 from app.db.repositories import (
@@ -16,6 +15,7 @@ from app.services.chronos_service import ChronosService
 from app.services.time_utils import (
     duration_hours,
     daterange,
+    effective_start,
     next_month,
 )
 
@@ -67,10 +67,7 @@ class BalanceService:
         return total
 
     def start_year_month(self, user: User) -> tuple[int, int]:
-        today = date.today()
-        y = user.start_year if user.start_year else today.year
-        m = user.start_month if user.start_month else today.month
-        return y, m
+        return effective_start(user.start_year, user.start_month)
 
     def carried_balance(
         self, user: User, year: int, month: int, chronos: Optional[Chronos]
