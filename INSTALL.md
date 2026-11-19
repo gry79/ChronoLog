@@ -2,7 +2,7 @@
 
 ## Voraussetzungen
 
-- Python 3.10 oder neuer
+- Python 3.11 oder neuer (DuckDB 2.0)
 - pip
 
 ## Installation
