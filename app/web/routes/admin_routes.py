@@ -7,6 +7,7 @@ from flask import (
     current_app,
     flash,
     g,
+    make_response,
     redirect,
     render_template,
     request,
@@ -16,7 +17,7 @@ from flask import (
 from app.logger import log
 from app.security import hash_password, validate_password, validate_username
 from app.services.time_utils import is_real_calendar_day, parse_decimal
-from app.web.helpers import admin_required, require_csrf
+from app.web.helpers import admin_required, clear_session_cookie, require_csrf
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -306,6 +307,10 @@ def users_save():
         if pw_err:
             flash(pw_err, "error")
             return redirect(url_for("admin.users_edit", user_id=user_id))
+        if user_id == g.current_user.id:
+            flash("Passwort geändert. Bitte melden Sie sich erneut an.", "success")
+            resp = make_response(redirect(url_for("auth.login")))
+            return clear_session_cookie(resp)
         flash("Benutzer gespeichert und Passwort zurückgesetzt.", "success")
     else:
         flash("Benutzer gespeichert.", "success")

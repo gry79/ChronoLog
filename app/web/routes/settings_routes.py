@@ -7,6 +7,7 @@ from flask import (
     current_app,
     flash,
     g,
+    make_response,
     redirect,
     render_template,
     request,
@@ -15,7 +16,7 @@ from flask import (
 
 from app.security import validate_username
 from app.services.time_utils import parse_decimal
-from app.web.helpers import login_required, require_csrf
+from app.web.helpers import clear_session_cookie, login_required, require_csrf
 
 bp = Blueprint("settings", __name__)
 
@@ -46,9 +47,10 @@ def settings():
             )
             if msg:
                 flash(msg, "error")
-            else:
-                flash("Passwort geändert.", "success")
-            return redirect(url_for("settings.settings"))
+                return redirect(url_for("settings.settings"))
+            flash("Passwort geändert. Bitte melden Sie sich erneut an.", "success")
+            resp = make_response(redirect(url_for("auth.login")))
+            return clear_session_cookie(resp)
 
         username = (request.form.get("username") or "").strip()
         first_name = (request.form.get("first_name") or "").strip()

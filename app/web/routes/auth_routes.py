@@ -8,6 +8,7 @@ import time
 from flask import (
     Blueprint,
     Response,
+    abort,
     current_app,
     jsonify,
     make_response,
@@ -24,6 +25,7 @@ from app.web.helpers import (
     clear_session_cookie,
     get_auth,
     load_current_user,
+    require_csrf,
     set_session_cookie,
 )
 
@@ -70,11 +72,16 @@ def login():
     )
 
 
-@bp.route("/logout", methods=["POST", "GET"])
+@bp.route("/logout", methods=["POST"])
 def logout():
     sid = request.cookies.get(SESSION_COOKIE)
+    _user, sess = load_current_user()
+    if sess is not None:
+        err = require_csrf()
+        if err:
+            abort(400)
     get_auth().logout(sid)
-    if request.args.get("reason") == "timeout":
+    if request.form.get("reason") == "timeout":
         resp = make_response(redirect(url_for("auth.login", timeout=1)))
     else:
         resp = make_response(redirect(url_for("auth.login")))

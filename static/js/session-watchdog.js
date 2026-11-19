@@ -17,7 +17,23 @@
     try {
       if (es) es.close();
     } catch (e) { /* ignore */ }
-    window.location.replace(cfg.logoutUrl);
+    var form = document.createElement("form");
+    form.method = "POST";
+    form.action = cfg.logoutUrl;
+    var reason = document.createElement("input");
+    reason.type = "hidden";
+    reason.name = "reason";
+    reason.value = "timeout";
+    form.appendChild(reason);
+    if (cfg.csrf) {
+      var csrf = document.createElement("input");
+      csrf.type = "hidden";
+      csrf.name = "csrf_token";
+      csrf.value = cfg.csrf;
+      form.appendChild(csrf);
+    }
+    document.body.appendChild(form);
+    form.submit();
   }
 
   // --- Server-Sent Events (primary) ---

@@ -7,6 +7,7 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 from app.db.connection import Database
+from app.security import hash_token
 from app.services.time_utils import now_local
 
 
@@ -245,15 +246,26 @@ class SessionRepository:
                 id, user_id, created_at, last_activity, expires_hard, csrf_token
             ) VALUES (?, ?, ?, ?, ?, ?)
             """,
-            [session_id, user_id, now, now, expires_hard, csrf_token],
+            [hash_token(session_id), user_id, now, now, expires_hard, csrf_token],
         )
 
     def get(self, session_id: str) -> Optional[SessionRow]:
-        row = self.db.fetchone("SELECT * FROM sessions WHERE id = ?", [session_id])
+        if not session_id:
+            return None
+        stored = hash_token(session_id)
+        row = self.db.fetchone("SELECT * FROM sessions WHERE id = ?", [stored])
+        if row is None and stored != session_id:
+            # Sessions created before ids were hashed.
+            row = self.db.fetchone("SELECT * FROM sessions WHERE id = ?", [session_id])
+            if row is not None:
+                self.db.execute(
+                    "UPDATE sessions SET id = ? WHERE id = ?",
+                    [stored, session_id],
+                )
         if not row:
             return None
         return SessionRow(
-            id=row[0],
+            id=stored,
             user_id=int(row[1]),
             created_at=row[2],
             last_activity=row[3],
@@ -262,13 +274,22 @@ class SessionRepository:
         )
 
     def touch(self, session_id: str) -> None:
+        stored = hash_token(session_id)
         self.db.execute(
-            "UPDATE sessions SET last_activity = ? WHERE id = ?",
-            [now_local(), session_id],
+            """
+            UPDATE sessions
+            SET last_activity = ?, id = ?
+            WHERE id = ? OR id = ?
+            """,
+            [now_local(), stored, stored, session_id],
         )
 
     def delete(self, session_id: str) -> None:
-        self.db.execute("DELETE FROM sessions WHERE id = ?", [session_id])
+        stored = hash_token(session_id)
+        self.db.execute(
+            "DELETE FROM sessions WHERE id = ? OR id = ?",
+            [stored, session_id],
+        )
 
     def delete_for_user(self, user_id: int) -> None:
         self.db.execute("DELETE FROM sessions WHERE user_id = ?", [user_id])

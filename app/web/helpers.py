@@ -66,10 +66,10 @@ def require_csrf() -> Optional[str]:
     """Validate CSRF token from form or header. Returns error message or None."""
     sess: Optional[SessionRow] = getattr(g, "session_row", None)
     if not sess:
-        return "Not authenticated"
+        return "Nicht angemeldet"
     token = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
     if not token or not constant_time_equals(token, sess.csrf_token):
-        return "Invalid CSRF token"
+        return "Ungültiges CSRF-Token"
     return None
 
 
