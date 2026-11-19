@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+import math
 import re
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -118,3 +119,59 @@ def daterange(start: date, end: date):
 
 def now_local() -> datetime:
     return datetime.now()
+
+
+def parse_decimal(value: str) -> float:
+    """Parse a decimal entered with a dot or comma. Rejects NaN and infinity."""
+    number = float(str(value).strip().replace(",", "."))
+    if not math.isfinite(number):
+        raise ValueError(f"Not a finite number: {value}")
+    return number
+
+
+def is_real_calendar_day(month: int, day: int, year: Optional[int]) -> bool:
+    """True for a real date. Recurring days (no year) may be 29 February."""
+    if not (1 <= month <= 12):
+        return False
+    if year is not None:
+        try:
+            date(int(year), month, day)
+            return True
+        except (ValueError, OverflowError):
+            return False
+    if month == 2:
+        return 1 <= day <= 29
+    return 1 <= day <= calendar.monthrange(2001, month)[1]
+
+
+def effective_start(
+    start_year: Optional[int],
+    start_month: Optional[int],
+    today: Optional[date] = None,
+) -> tuple[int, int]:
+    """Start month for a user. Invalid stored values fall back to today."""
+    today = today or date.today()
+    year = start_year if isinstance(start_year, int) else today.year
+    month = start_month if isinstance(start_month, int) else today.month
+    if not (1970 <= year <= 2100):
+        year = today.year
+    if not (1 <= month <= 12):
+        month = today.month
+    return year, month
+
+
+def validate_month_view(
+    year: int,
+    month: int,
+    start: tuple[int, int],
+    today: Optional[date] = None,
+) -> Optional[str]:
+    """Error text when a month is not a valid, reachable time-entry month."""
+    today = today or date.today()
+    if not isinstance(year, int) or not isinstance(month, int):
+        return "Ungültiger Monat"
+    if not (1970 <= year <= 2100 and 1 <= month <= 12):
+        return "Ungültiger Monat"
+    if (year, month) < start or (year, month) > (today.year, today.month):
+        return "Monat liegt ausserhalb des erlaubten Bereichs"
+    return None

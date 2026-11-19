@@ -7,6 +7,7 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 from app.db.connection import Database
+from app.services.time_utils import now_local
 
 
 # ---------------------------------------------------------------------------
@@ -237,12 +238,14 @@ class SessionRepository:
         expires_hard: datetime,
         csrf_token: str,
     ) -> None:
+        now = now_local()
         self.db.execute(
             """
-            INSERT INTO sessions (id, user_id, expires_hard, csrf_token)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO sessions (
+                id, user_id, created_at, last_activity, expires_hard, csrf_token
+            ) VALUES (?, ?, ?, ?, ?, ?)
             """,
-            [session_id, user_id, expires_hard, csrf_token],
+            [session_id, user_id, now, now, expires_hard, csrf_token],
         )
 
     def get(self, session_id: str) -> Optional[SessionRow]:
@@ -260,8 +263,8 @@ class SessionRepository:
 
     def touch(self, session_id: str) -> None:
         self.db.execute(
-            "UPDATE sessions SET last_activity = current_timestamp WHERE id = ?",
-            [session_id],
+            "UPDATE sessions SET last_activity = ? WHERE id = ?",
+            [now_local(), session_id],
         )
 
     def delete(self, session_id: str) -> None:
@@ -276,10 +279,10 @@ class SessionRepository:
         self.db.execute(
             """
             DELETE FROM sessions
-            WHERE expires_hard < current_timestamp
+            WHERE expires_hard < ?
                OR last_activity < ?
             """,
-            [idle_cutoff],
+            [now_local(), idle_cutoff],
         )
         after = self.db.fetchone("SELECT COUNT(*) FROM sessions")
         return int((before[0] if before else 0) - (after[0] if after else 0))
@@ -502,14 +505,9 @@ class TimeEntryRepository:
         self, user_id: int, year: int, month: int, entries: list[dict]
     ) -> None:
         """Atomically replace all entries for a user/month."""
-        self.db.begin()
-        try:
+        with self.db.transaction():
             self.delete_for_month(user_id, year, month)
             self.insert_batch(entries)
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            raise
 
     def _delete_ids(self, table: str, ids: list[int]) -> None:
         if not ids:
@@ -662,14 +660,9 @@ class AbsenceRepository:
     def replace_for_month(
         self, user_id: int, year: int, month: int, items: list[dict]
     ) -> None:
-        self.db.begin()
-        try:
+        with self.db.transaction():
             self.delete_for_month(user_id, year, month)
             self.insert_batch(items)
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            raise
 
     def has_overlap_with_dates(
         self, user_id: int, date_from: date, date_to: date, exclude_ids: set[int] | None = None

@@ -13,7 +13,9 @@ from flask import (
     url_for,
 )
 
+from app.logger import log
 from app.security import hash_password, validate_password, validate_username
+from app.services.time_utils import is_real_calendar_day, parse_decimal
 from app.web.helpers import admin_required, require_csrf
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -67,7 +69,7 @@ def chronos_save():
     repo = current_app.config["CHRONOS_REPO"]
     name = (request.form.get("name") or "").strip()
     try:
-        daily = float((request.form.get("daily_target_hours") or "0").replace(",", "."))
+        daily = parse_decimal(request.form.get("daily_target_hours") or "0")
     except ValueError:
         flash("Ungültige Soll-Arbeitszeit.", "error")
         return redirect(url_for("admin.chronos_list"))
@@ -79,15 +81,8 @@ def chronos_save():
         flash("Soll-Arbeitszeit muss zwischen 0 und 24 liegen.", "error")
         return redirect(url_for("admin.chronos_list"))
 
-    chronos_id_raw = request.form.get("chronos_id") or ""
-    if chronos_id_raw:
-        cid = int(chronos_id_raw)
-        repo.update(cid, name, daily)
-    else:
-        created = repo.create(name, daily)
-        cid = created.id
-
-    # Special days from form arrays
+    # Validate special days before any write so a bad row cannot leave a
+    # half-saved Chronos behind.
     months = request.form.getlist("sd_month")
     days = request.form.getlist("sd_day")
     years = request.form.getlist("sd_year")
@@ -95,6 +90,7 @@ def chronos_save():
     descs = request.form.getlist("sd_description")
 
     specials = []
+    seen: set[tuple[int, int, int | None]] = set()
     for i in range(len(months)):
         if not months[i] and not days[i]:
             continue
@@ -103,22 +99,48 @@ def chronos_save():
             d = int(days[i])
             y_raw = (years[i] if i < len(years) else "").strip()
             y = int(y_raw) if y_raw else None
-            t = float((targets[i] if i < len(targets) else "0").replace(",", "."))
+            t = parse_decimal(targets[i] if i < len(targets) and targets[i] != "" else "0")
         except ValueError:
             flash("Ungültige Spezialtag-Angabe.", "error")
-            return redirect(url_for("admin.chronos_edit", chronos_id=cid))
-        if not (1 <= m <= 12 and 1 <= d <= 31):
+            return redirect(url_for("admin.chronos_list"))
+        if not is_real_calendar_day(m, d, y):
             flash("Spezialtag: Monat/Tag ungültig.", "error")
-            return redirect(url_for("admin.chronos_edit", chronos_id=cid))
+            return redirect(url_for("admin.chronos_list"))
+        if y is not None and not (1970 <= y <= 2100):
+            flash("Spezialtag: Jahr ungültig.", "error")
+            return redirect(url_for("admin.chronos_list"))
+        if t < 0 or t > 24:
+            flash("Soll-Arbeitszeit eines Spezialtags muss zwischen 0 und 24 liegen.", "error")
+            return redirect(url_for("admin.chronos_list"))
+        key = (m, d, y)
+        if key in seen:
+            flash("Spezialtag ist doppelt erfasst.", "error")
+            return redirect(url_for("admin.chronos_list"))
+        seen.add(key)
         specials.append(
             {
                 "month": m,
                 "day": d,
                 "year": y,
                 "target_hours": t,
-                "description": descs[i] if i < len(descs) else "",
+                "description": (descs[i] if i < len(descs) else "")[:256],
             }
         )
+
+    chronos_id_raw = request.form.get("chronos_id") or ""
+    try:
+        if chronos_id_raw:
+            cid = int(chronos_id_raw)
+            if repo.get(cid) is None:
+                flash("Chronos nicht gefunden.", "error")
+                return redirect(url_for("admin.chronos_list"))
+            repo.update(cid, name, daily)
+        else:
+            created = repo.create(name, daily)
+            cid = created.id
+    except (TypeError, ValueError):
+        flash("Chronos nicht gefunden.", "error")
+        return redirect(url_for("admin.chronos_list"))
 
     repo.replace_special_days(cid, specials)
     flash("Chronos gespeichert.", "success")
@@ -133,7 +155,11 @@ def chronos_delete():
         flash(err, "error")
         return redirect(url_for("admin.chronos_list"))
 
-    cid = int(request.form.get("chronos_id"))
+    try:
+        cid = int(request.form.get("chronos_id") or "")
+    except (TypeError, ValueError):
+        flash("Chronos nicht gefunden.", "error")
+        return redirect(url_for("admin.chronos_list"))
     # Unassign users first
     users = current_app.config["USERS"].list_all()
     for u in users:
@@ -198,7 +224,11 @@ def users_save():
         return redirect(url_for("admin.users_list"))
 
     users_repo = current_app.config["USERS"]
-    user_id = int(request.form.get("user_id"))
+    try:
+        user_id = int(request.form.get("user_id") or "")
+    except (TypeError, ValueError):
+        flash("Benutzer nicht gefunden.", "error")
+        return redirect(url_for("admin.users_list"))
     target = users_repo.get_by_id(user_id)
     if not target:
         flash("Benutzer nicht gefunden.", "error")
@@ -215,6 +245,9 @@ def users_save():
     if users_repo.username_exists(username, exclude_id=user_id):
         flash("Benutzername bereits vergeben.", "error")
         return redirect(url_for("admin.users_edit", user_id=user_id))
+    if not first_name or not last_name or not email:
+        flash("Alle Pflichtfelder ausfüllen.", "error")
+        return redirect(url_for("admin.users_edit", user_id=user_id))
 
     is_admin = request.form.get("is_admin") == "on"
     is_locked = request.form.get("is_locked") == "on"
@@ -223,17 +256,35 @@ def users_save():
     if target.id == g.current_user.id and not is_admin:
         flash("Sie können sich nicht selbst die Admin-Rechte entziehen.", "error")
         return redirect(url_for("admin.users_edit", user_id=user_id))
+    if target.id == g.current_user.id and is_locked:
+        flash("Sie können Ihr eigenes Konto nicht sperren.", "error")
+        return redirect(url_for("admin.users_edit", user_id=user_id))
+
+    new_pw = request.form.get("new_password") or ""
+    if new_pw:
+        pw_err = validate_password(new_pw)
+        if pw_err:
+            flash(pw_err, "error")
+            return redirect(url_for("admin.users_edit", user_id=user_id))
 
     try:
         start_year = int(request.form.get("start_year") or 0) or None
         start_month = int(request.form.get("start_month") or 0) or None
-        initial_balance = float(
-            (request.form.get("initial_balance") or "0").replace(",", ".")
-        )
+        initial_balance = parse_decimal(request.form.get("initial_balance") or "0")
         chronos_raw = request.form.get("chronos_id") or ""
         chronos_id = int(chronos_raw) if chronos_raw else None
     except ValueError:
         flash("Ungültige Eingabewerte.", "error")
+        return redirect(url_for("admin.users_edit", user_id=user_id))
+
+    if start_month is not None and not (1 <= start_month <= 12):
+        flash("Startmonat muss zwischen 1 und 12 liegen.", "error")
+        return redirect(url_for("admin.users_edit", user_id=user_id))
+    if start_year is not None and not (1970 <= start_year <= 2100):
+        flash("Startjahr muss zwischen 1970 und 2100 liegen.", "error")
+        return redirect(url_for("admin.users_edit", user_id=user_id))
+    if chronos_id is not None and current_app.config["CHRONOS_REPO"].get(chronos_id) is None:
+        flash("Chronos nicht gefunden.", "error")
         return redirect(url_for("admin.users_edit", user_id=user_id))
 
     users_repo.update_profile(
@@ -250,7 +301,6 @@ def users_save():
         is_locked=is_locked,
     )
 
-    new_pw = request.form.get("new_password") or ""
     if new_pw:
         pw_err = current_app.config["AUTH"].admin_reset_password(user_id, new_pw)
         if pw_err:
@@ -305,8 +355,9 @@ def users_create():
             password_hash=hash_password(password),
             is_admin=is_admin,
         )
-    except Exception as exc:
-        flash(f"Benutzer konnte nicht angelegt werden: {exc}", "error")
+    except Exception:
+        log.exception("Failed to create user %s", username)
+        flash("Benutzer konnte nicht angelegt werden.", "error")
         return redirect(url_for("admin.users_list"))
     flash(f"Benutzer {user.username} angelegt.", "success")
     return redirect(url_for("admin.users_edit", user_id=user.id))

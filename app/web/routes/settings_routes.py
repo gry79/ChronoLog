@@ -14,6 +14,7 @@ from flask import (
 )
 
 from app.security import validate_username
+from app.services.time_utils import parse_decimal
 from app.web.helpers import login_required, require_csrf
 
 bp = Blueprint("settings", __name__)
@@ -66,9 +67,7 @@ def settings():
         try:
             start_year = int(request.form.get("start_year") or 0) or None
             start_month = int(request.form.get("start_month") or 0) or None
-            initial_balance = float(
-                (request.form.get("initial_balance") or "0").replace(",", ".")
-            )
+            initial_balance = parse_decimal(request.form.get("initial_balance") or "0")
             chronos_raw = request.form.get("chronos_id") or ""
             chronos_id = int(chronos_raw) if chronos_raw else None
         except ValueError:
@@ -77,6 +76,12 @@ def settings():
 
         if start_month is not None and not (1 <= start_month <= 12):
             flash("Startmonat muss zwischen 1 und 12 liegen.", "error")
+            return redirect(url_for("settings.settings"))
+        if start_year is not None and not (1970 <= start_year <= 2100):
+            flash("Startjahr muss zwischen 1970 und 2100 liegen.", "error")
+            return redirect(url_for("settings.settings"))
+        if chronos_id is not None and chronos_repo.get(chronos_id) is None:
+            flash("Chronos nicht gefunden.", "error")
             return redirect(url_for("settings.settings"))
 
         users.update_profile(

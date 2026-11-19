@@ -23,6 +23,7 @@ from app.services.time_utils import (
     month_label_de,
     next_month,
     parse_time_input,
+    validate_month_view,
     weekday_name_de,
 )
 
@@ -128,7 +129,7 @@ class TimeService:
                         "time_from": row.get("time_from") or "",
                         "time_to": row.get("time_to") or "",
                         "description": (row.get("description") or "")[:256],
-                        "sort_order": int(row.get("sort_order") or 0),
+                        "sort_order": _parse_sort(row.get("sort_order")),
                     }
                 )
         else:
@@ -213,6 +214,12 @@ class TimeService:
         sy, sm = self.balance_service.start_year_month(user)
         can_prev = (year, month) > (sy, sm)
         can_next = self.can_navigate_next(user, year, month)
+        # One pass over history. current_balance() would walk it a second time.
+        carried = self.balance_service.carried_balance(user, year, month, chronos)
+        worked = self.balance_service.worked_hours_for_month(user.id, year, month, chronos)
+        monthly_target = (
+            self.chronos_service.monthly_target(chronos, year, month) if chronos else 0.0
+        )
 
         return MonthView(
             year=year,
@@ -222,14 +229,10 @@ class TimeService:
             can_go_prev=can_prev,
             can_go_next=can_next,
             daily_target=float(chronos.daily_target_hours) if chronos else 0.0,
-            monthly_target=(
-                self.chronos_service.monthly_target(chronos, year, month) if chronos else 0.0
-            ),
-            carried_balance=self.balance_service.carried_balance(user, year, month, chronos),
-            current_balance=self.balance_service.current_balance(user, year, month, chronos),
-            worked_hours=self.balance_service.worked_hours_for_month(
-                user.id, year, month, chronos
-            ),
+            monthly_target=monthly_target,
+            carried_balance=carried,
+            current_balance=round(carried - monthly_target + worked, 2),
+            worked_hours=worked,
             days=days,
             user_display_name=f"{user.last_name}, {user.first_name}",
         )
@@ -273,10 +276,17 @@ class TimeService:
                         day.entries[-1]["show_down"] = True
                         day.entries[-1]["expand_date_down"] = next_d.isoformat()
 
+    def _month_window_error(self, user: User, year: int, month: int) -> Optional[str]:
+        start = self.balance_service.start_year_month(user)
+        return validate_month_view(year, month, start)
+
     def save_month_entries(
         self, user: User, year: int, month: int, raw_rows: list[dict]
     ) -> Optional[str]:
         """Validate and replace all entries for the month. Returns error message or None."""
+        window = self._month_window_error(user, year, month)
+        if window:
+            return window
         if self.month_repo.is_closed(user.id, year, month):
             return "Monat ist abgeschlossen und kann nicht bearbeitet werden"
 
@@ -304,7 +314,7 @@ class TimeService:
                 "time_from": tf,
                 "time_to": tt,
                 "description": desc,
-                "sort_order": int(row.get("sort_order") or 0),
+                "sort_order": _parse_sort(row.get("sort_order")),
                 "_has_data": bool(tf or tt or desc),
             }
 
@@ -372,17 +382,19 @@ class TimeService:
 
         try:
             self.time_repo.replace_for_month(user.id, year, month, final)
-        except Exception as exc:
+        except Exception:
             log.exception("Failed to save time entries for user=%s %04d-%02d", user.id, year, month)
             return (
                 "Speichern fehlgeschlagen (Datenbankfehler). "
-                "Bitte Seite neu laden und erneut versuchen. "
-                f"Details: {exc}"
+                "Bitte Seite neu laden und erneut versuchen."
             )
         log.info("Saved time entries for user=%s %04d-%02d (%s rows)", user.id, year, month, len(final))
         return None
 
-    def set_month_closed(self, user: User, year: int, month: int, closed: bool) -> None:
+    def set_month_closed(self, user: User, year: int, month: int, closed: bool) -> Optional[str]:
+        window = self._month_window_error(user, year, month)
+        if window:
+            return window
         self.month_repo.set_closed(user.id, year, month, closed)
         log.info(
             "Month %04d-%02d %s for user=%s",
@@ -391,6 +403,14 @@ class TimeService:
             "closed" if closed else "reopened",
             user.id,
         )
+        return None
+
+
+def _parse_sort(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def time_to_minutes_safe(hhmm: str) -> int:

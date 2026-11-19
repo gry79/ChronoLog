@@ -41,7 +41,7 @@
     var raw = String(value).trim();
     if (raw === "") return "";
 
-    raw = raw.replace(".", ":").replace(",", ":");
+    raw = raw.replace(/[.,]/g, ":");
 
     if (/^\d{3,4}$/.test(raw)) {
       var h, m;

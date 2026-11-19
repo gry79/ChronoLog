@@ -24,7 +24,15 @@ class ChronosService:
         """
         Map (month, day) -> SpecialDay for a year.
         Year-specific entries override recurring ones.
+
+        Within one HTTP request the map is cached. A month view otherwise
+        asks for the same rows once per calendar day.
         """
+        cache = _request_specials_cache()
+        cache_key = (chronos_id, year)
+        if cache is not None and cache_key in cache:
+            return cache[cache_key]
+
         days = self.repo.list_special_days(chronos_id)
         recurring: dict[tuple[int, int], SpecialDay] = {}
         specific: dict[tuple[int, int], SpecialDay] = {}
@@ -36,11 +44,16 @@ class ChronosService:
                 specific[key] = sd
         result = dict(recurring)
         result.update(specific)
+        if cache is not None:
+            cache[cache_key] = result
         return result
 
-    def target_for_date(self, chronos: Chronos, d: date) -> float:
-        """Soll hours for a calendar day."""
-        specials = self.special_days_map(chronos.id, d.year)
+    def _hours_for_day(
+        self,
+        chronos: Chronos,
+        d: date,
+        specials: dict[tuple[int, int], SpecialDay],
+    ) -> float:
         key = (d.month, d.day)
         if key in specials:
             return float(specials[key].target_hours)
@@ -48,10 +61,16 @@ class ChronosService:
             return 0.0
         return float(chronos.daily_target_hours)
 
+    def target_for_date(self, chronos: Chronos, d: date) -> float:
+        """Soll hours for a calendar day."""
+        specials = self.special_days_map(chronos.id, d.year)
+        return self._hours_for_day(chronos, d, specials)
+
     def monthly_target(self, chronos: Chronos, year: int, month: int) -> float:
+        specials = self.special_days_map(chronos.id, year)
         total = 0.0
         for d in month_days(year, month):
-            total += self.target_for_date(chronos, d)
+            total += self._hours_for_day(chronos, d, specials)
         return round(total, 2)
 
     @staticmethod
@@ -71,3 +90,19 @@ class ChronosService:
     def is_hidden_by_default(self, chronos: Optional[Chronos], d: date) -> bool:
         """Alias for is_free_day (weekends + 0.0h special days)."""
         return self.is_free_day(chronos, d)
+
+
+def _request_specials_cache() -> Optional[dict]:
+    """Per-request cache, or None outside a Flask request."""
+    try:
+        from flask import g, has_request_context
+
+        if not has_request_context():
+            return None
+        cache = getattr(g, "_chronos_specials", None)
+        if cache is None:
+            cache = {}
+            g._chronos_specials = cache
+        return cache
+    except Exception:
+        return None
