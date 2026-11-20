@@ -18,6 +18,8 @@ class AppConfig:
     session_timeout_idle_min: int = 120
     session_timeout_hard_min: int = 600
     web_port: int = 8080
+    # Honor X-Forwarded-* only when a reverse proxy is actually in front.
+    trust_proxy: bool = False
     config_path: str = "config.yaml"
 
     @property
@@ -51,6 +53,8 @@ def load_config(config_path: str | Path) -> AppConfig:
         )
     if "web_port" in data:
         cfg.web_port = _as_int(data["web_port"], "web_port", 1, 65535)
+    if "trust_proxy" in data:
+        cfg.trust_proxy = _as_bool(data["trust_proxy"])
 
     # Resolve relative db_file against config file directory
     db = Path(cfg.db_file)

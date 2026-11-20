@@ -15,6 +15,7 @@ from flask import (
 )
 
 from app.db.repositories import SessionRow, User
+from app.logger import log
 from app.security import constant_time_equals
 
 
@@ -56,6 +57,7 @@ def admin_required(view: Callable):
         if not user:
             return redirect(url_for("auth.login"))
         if not user.is_admin:
+            log.warning("Denied admin access for user id=%s path=%s", user.id, request.path)
             abort(403)
         return view(*args, **kwargs)
 

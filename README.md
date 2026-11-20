@@ -86,6 +86,7 @@ allow_user_registration: false
 session_timeout_idle_min: 120   # Minuten ohne Aktivität → Logout
 session_timeout_hard_min: 600   # Absolute Session-Dauer
 web_port: 8080
+trust_proxy: false        # true nur hinter einem Reverse Proxy
 ```
 
 | Parameter | Bedeutung | Default |
@@ -95,6 +96,7 @@ web_port: 8080
 | `session_timeout_idle_min` | Idle-Timeout (Minuten) | `120` |
 | `session_timeout_hard_min` | Hartes Timeout (Minuten) | `600` |
 | `web_port` | HTTP-Port | `8080` |
+| `trust_proxy` | `X-Forwarded-Proto` und Client-Adresse vom Proxy übernehmen | `false` |
 
 ## Projektstruktur
 

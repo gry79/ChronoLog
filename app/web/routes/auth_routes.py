@@ -20,6 +20,7 @@ from flask import (
 )
 
 from app.logger import log
+from app.web.rate_limit import AttemptLimiter
 from app.web.helpers import (
     SESSION_COOKIE,
     clear_session_cookie,
@@ -30,6 +31,21 @@ from app.web.helpers import (
 )
 
 bp = Blueprint("auth", __name__)
+
+
+_TOO_MANY_ATTEMPTS = "Zu viele Anmeldeversuche. Bitte später erneut versuchen."
+
+
+def _client_ip() -> str:
+    return request.remote_addr or "unknown"
+
+
+def _attempt_key(kind: str, name: str) -> str:
+    return f"{kind}:{(name or '').strip().lower()}"
+
+
+def _limiter() -> AttemptLimiter:
+    return current_app.config["LOGIN_LIMIT"]
 
 
 def _register_error_field(error: str | None) -> str | None:
@@ -73,10 +89,26 @@ def login():
     if request.method == "POST":
         username = request.form.get("username", "")
         password = request.form.get("password", "")
+        limit_name = _attempt_key("login", username)
+        ip = _client_ip()
+        if _limiter().is_blocked(ip, limit_name):
+            log.warning("Login rate limit reached for username=%s", username.strip())
+            error = _TOO_MANY_ATTEMPTS
+            return (
+                render_template(
+                    "login.html",
+                    error=error,
+                    username=username,
+                    registration_allowed=auth.registration_allowed(),
+                ),
+                429,
+            )
         session_id, error, _user = auth.login(username, password)
         if session_id:
+            _limiter().record_success(limit_name)
             resp = make_response(redirect(url_for("time.time_entry")))
             return set_session_cookie(resp, session_id)
+        _limiter().record_failure(ip, limit_name)
     elif request.args.get("timeout") == "1":
         error = "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an."
 
@@ -180,6 +212,12 @@ def register():
             "last_name": request.form.get("last_name", ""),
             "email": request.form.get("email", ""),
         }
+        limit_name = _attempt_key("register", form["username"])
+        ip = _client_ip()
+        if _limiter().is_blocked(ip, limit_name):
+            log.warning("Registration rate limit reached for username=%s", form["username"].strip())
+            error = _TOO_MANY_ATTEMPTS
+            return render_template("register.html", error=error, error_field=None, form=form), 429
         new_user, error = auth.register(
             username=form["username"],
             first_name=form["first_name"],
@@ -195,9 +233,12 @@ def register():
                 request.form.get("password", ""),
             )
             if session_id:
+                _limiter().record_success(limit_name)
                 resp = make_response(redirect(url_for("time.time_entry")))
                 return set_session_cookie(resp, session_id)
             error = login_err or "Registrierung erfolgreich, Anmeldung fehlgeschlagen."
+        else:
+            _limiter().record_failure(ip, limit_name)
         error_field = _register_error_field(error)
 
     return render_template("register.html", error=error, error_field=error_field, form=form)

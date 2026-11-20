@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Flask
+from flask import Flask, request
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config import AppConfig
 from app.db.connection import Database
@@ -23,6 +24,7 @@ from app.services.auth_service import AuthService
 from app.services.balance_service import BalanceService
 from app.services.chronos_service import ChronosService
 from app.services.time_service import TimeService
+from app.web.rate_limit import AttemptLimiter
 
 
 def create_app(config: AppConfig, db: Database) -> Flask:
@@ -38,6 +40,10 @@ def create_app(config: AppConfig, db: Database) -> Flask:
     app.config["SECRET_KEY"] = _ensure_secret(config.db_path.parent / ".secret_key")
     app.config["APP_CONFIG"] = config
     app.config["DB"] = db
+    app.config["LOGIN_LIMIT"] = AttemptLimiter()
+    if config.trust_proxy:
+        # One proxy hop: client address, protocol and host come from that proxy.
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     # Repositories
     users = UserRepository(db)
@@ -78,10 +84,20 @@ def create_app(config: AppConfig, db: Database) -> Flask:
             "img-src 'self' data:; "
             "font-src 'self' data:; "
             "connect-src 'self'; "
+            "object-src 'none'; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
             "form-action 'self'"
         )
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+        response.headers.pop("Server", None)
+        # Authenticated pages must not be stored by a shared cache.
+        if request.endpoint != "static":
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
+        if request.is_secure:
+            response.headers["Strict-Transport-Security"] = "max-age=15552000; includeSubDomains"
         return response
 
     from app.web.routes.auth_routes import bp as auth_bp
