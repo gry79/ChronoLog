@@ -40,14 +40,19 @@
         <div class="grid sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1">Name</label>
-            <input type="text" name="name" required value="{{ edit.name if edit else '' }}"
-                   class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            <input type="text" name="name" required value="{{ form_name }}"
+                   class="w-full border rounded-lg px-3 py-2 text-sm {% if field_errors.get('name') %}border-red-400{% else %}border-slate-300{% endif %}">
+            {% if field_errors.get('name') %}
+            <p class="mt-1 text-xs text-red-700">{{ field_errors.name }}</p>
+            {% endif %}
           </div>
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1">Soll-Arbeitszeit / Tag (h)</label>
-            <input type="text" name="daily_target_hours" required
-                   value="{{ '%.1f'|format(edit.daily_target_hours) if edit else '8.0' }}"
-                   class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            <input type="text" name="daily_target_hours" required value="{{ form_daily }}"
+                   class="w-full border rounded-lg px-3 py-2 text-sm {% if field_errors.get('daily') %}border-red-400{% else %}border-slate-300{% endif %}">
+            {% if field_errors.get('daily') %}
+            <p class="mt-1 text-xs text-red-700">{{ field_errors.daily }}</p>
+            {% endif %}
           </div>
         </div>
 
@@ -74,12 +79,15 @@
               </thead>
               <tbody id="special-days-body">
                 {% for sd in special_days %}
-                <tr class="border-t border-slate-100">
+                <tr class="border-t border-slate-100 {% if sd.error %}bg-red-50{% endif %}">
                   <td class="px-2 py-1"><input type="number" name="sd_day" min="1" max="31" value="{{ sd.day }}" class="w-16 border rounded px-2 py-1 text-sm"></td>
                   <td class="px-2 py-1"><input type="number" name="sd_month" min="1" max="12" value="{{ sd.month }}" class="w-16 border rounded px-2 py-1 text-sm"></td>
                   <td class="px-2 py-1"><input type="number" name="sd_year" min="2000" max="2100" value="{{ sd.year or '' }}" class="w-20 border rounded px-2 py-1 text-sm" placeholder="opt."></td>
-                  <td class="px-2 py-1"><input type="text" name="sd_target" value="{{ '%.1f'|format(sd.target_hours) }}" class="w-20 border rounded px-2 py-1 text-sm"></td>
-                  <td class="px-2 py-1"><input type="text" name="sd_description" value="{{ sd.description }}" maxlength="256" class="w-full border rounded px-2 py-1 text-sm"></td>
+                  <td class="px-2 py-1"><input type="text" name="sd_target" value="{{ sd.target }}" class="w-20 border rounded px-2 py-1 text-sm"></td>
+                  <td class="px-2 py-1">
+                    <input type="text" name="sd_description" value="{{ sd.description }}" maxlength="256" class="w-full border rounded px-2 py-1 text-sm">
+                    {% if sd.error %}<p class="mt-1 text-xs text-red-700">{{ sd.error }}</p>{% endif %}
+                  </td>
                   <td class="px-2 py-1 text-center"><button type="button" data-action="delete-special-day" class="btn-icon danger">✕</button></td>
                 </tr>
                 {% endfor %}

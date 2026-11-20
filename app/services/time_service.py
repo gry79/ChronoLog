@@ -130,6 +130,7 @@ class TimeService:
                         "time_to": row.get("time_to") or "",
                         "description": (row.get("description") or "")[:256],
                         "sort_order": _parse_sort(row.get("sort_order")),
+                        "error": row.get("error") or "",
                     }
                 )
         else:
@@ -141,6 +142,7 @@ class TimeService:
                         "time_to": e.time_to or "",
                         "description": e.description or "",
                         "sort_order": e.sort_order,
+                        "error": "",
                     }
                 )
 
@@ -176,6 +178,7 @@ class TimeService:
                         "description": "",
                         "total": 0.0,
                         "sort_order": 0,
+                        "error": "",
                     }
                 )
             else:
@@ -190,6 +193,7 @@ class TimeService:
                             "description": e.get("description") or "",
                             "total": round(running, 2),
                             "sort_order": e.get("sort_order", 0),
+                            "error": e.get("error") or "",
                         }
                     )
 
@@ -297,15 +301,15 @@ class TimeService:
             try:
                 d = date.fromisoformat(row["entry_date"])
             except (KeyError, ValueError):
-                return "Ungültiges Datum in den Formulardaten"
+                return _mark_row(row, "Ungültiges Datum in den Formulardaten")
             if d.year != year or d.month != month:
-                return "Datum liegt ausserhalb des gewählten Monats"
+                return _mark_row(row, "Datum liegt ausserhalb des gewählten Monats")
 
             try:
                 tf = parse_time_input(row.get("time_from") or "")
                 tt = parse_time_input(row.get("time_to") or "")
             except ValueError as exc:
-                return f"Ungültige Zeitangabe: {exc}"
+                return _mark_row(row, f"Ungültige Zeitangabe: {exc}")
 
             desc = (row.get("description") or "")[:256]
             entry = {
@@ -316,25 +320,25 @@ class TimeService:
                 "description": desc,
                 "sort_order": _parse_sort(row.get("sort_order")),
                 "_has_data": bool(tf or tt or desc),
+                "_src": row,
             }
 
             if tf and tt and time_to_minutes_safe(tf) >= time_to_minutes_safe(tt):
-                return f"Endzeit muss nach Startzeit liegen ({d.strftime('%d.%m.%Y')})"
+                return _mark_row(
+                    row, f"Endzeit muss nach Startzeit liegen ({d.strftime('%d.%m.%Y')})"
+                )
 
             by_date.setdefault(d, []).append(entry)
 
         # Overlap check per day
         for d, items in by_date.items():
-            intervals = [
-                (it["time_from"], it["time_to"])
-                for it in items
-                if it["time_from"] and it["time_to"]
-            ]
-            for i in range(len(intervals)):
-                for j in range(i + 1, len(intervals)):
-                    a, b = intervals[i], intervals[j]
-                    if intervals_overlap(a[0], a[1], b[0], b[1]):
-                        return f"Überlappende Zeiten am {d.strftime('%d.%m.%Y')}"
+            complete = [it for it in items if it["time_from"] and it["time_to"]]
+            for i in range(len(complete)):
+                for j in range(i + 1, len(complete)):
+                    a, b = complete[i], complete[j]
+                    if intervals_overlap(a["time_from"], a["time_to"], b["time_from"], b["time_to"]):
+                        message = f"Überlappende Zeiten am {d.strftime('%d.%m.%Y')}"
+                        return _mark_row(a["_src"], message, b["_src"])
 
             # Re-number sort_order
             for idx, it in enumerate(items):
@@ -404,6 +408,14 @@ class TimeService:
             user.id,
         )
         return None
+
+
+def _mark_row(row: dict, message: str, *more: dict) -> str:
+    """Attach a validation message to the submitted row and return it."""
+    row["error"] = message
+    for extra in more:
+        extra["error"] = message
+    return message
 
 
 def _parse_sort(value) -> int:

@@ -128,70 +128,75 @@ def time_expand():
     return redirect(_time_entry_url(year, month, expand_list))
 
 
-@bp.route("/time/save", methods=["POST"])
-@login_required
-def time_save():
-    err = require_csrf()
-    if err:
-        flash(err, "error")
-        return redirect(url_for("time.time_entry"))
-
-    user = g.current_user
-    try:
-        year = int(request.form.get("year", 0))
-        month = int(request.form.get("month", 0))
-    except ValueError:
-        flash("Ungültiger Monat.", "error")
-        return redirect(url_for("time.time_entry"))
-
-    # Parse repeated form fields: dates[], from[], to[], desc[], sort[]
+def _posted_time_rows() -> list[dict]:
     dates = request.form.getlist("entry_date")
     froms = request.form.getlist("time_from")
     tos = request.form.getlist("time_to")
     descs = request.form.getlist("description")
     sorts = request.form.getlist("sort_order")
-
     rows = []
-    for i, d in enumerate(dates):
+    for i, entry_date in enumerate(dates):
         rows.append(
             {
-                "entry_date": d,
+                "entry_date": entry_date,
                 "time_from": froms[i] if i < len(froms) else "",
                 "time_to": tos[i] if i < len(tos) else "",
                 "description": descs[i] if i < len(descs) else "",
                 "sort_order": sorts[i] if i < len(sorts) else i,
+                "error": "",
             }
         )
+    return rows
 
+
+def _render_time_form(user, year: int, month: int, rows: list[dict]):
     time_svc = current_app.config["TIME_SVC"]
     expand_list = _filter_free_day_expands(user, year, month, _parse_expand_form())
-    # Free days present in the submitted form stay expanded on re-render
+    chronos_svc = current_app.config["CHRONOS_SVC"]
+    chronos = chronos_svc.get_for_user(user)
     for row in rows:
         try:
-            d = date.fromisoformat(str(row.get("entry_date") or ""))
+            entry_date = date.fromisoformat(str(row.get("entry_date") or ""))
         except ValueError:
             continue
-        if d not in expand_list and current_app.config["CHRONOS_SVC"].is_free_day(
-            current_app.config["CHRONOS_SVC"].get_for_user(user), d
-        ):
-            expand_list.append(d)
+        if entry_date not in expand_list and chronos_svc.is_free_day(chronos, entry_date):
+            expand_list.append(entry_date)
     expand_list = sorted(set(expand_list))
+    view = time_svc.build_month_view(user, year, month, set(expand_list), form_rows=rows)
+    return render_template(
+        "time_entry.html",
+        view=view,
+        user=user,
+        csrf_token=g.csrf_token,
+        active_nav="time",
+        expand_list=expand_list,
+    )
 
-    error = time_svc.save_month_entries(user, year, month, rows)
+
+@bp.route("/time/save", methods=["POST"])
+@login_required
+def time_save():
+    user = g.current_user
+    rows = _posted_time_rows()
+    try:
+        year = int(request.form.get("year", 0))
+        month = int(request.form.get("month", 0))
+    except ValueError:
+        flash("Ungültiger Monat.", "error")
+        today = date.today()
+        return _render_time_form(user, today.year, today.month, rows)
+
+    def fail(message: str):
+        flash(message, "error")
+        return _render_time_form(user, year, month, rows)
+
+    err = require_csrf()
+    if err:
+        return fail(err)
+
+    error = current_app.config["TIME_SVC"].save_month_entries(user, year, month, rows)
     if error:
-        flash(error, "error")
-        # Re-render with submitted values so nothing the user typed is lost
-        view = time_svc.build_month_view(
-            user, year, month, set(expand_list), form_rows=rows
-        )
-        return render_template(
-            "time_entry.html",
-            view=view,
-            user=user,
-            csrf_token=g.csrf_token,
-            active_nav="time",
-            expand_list=expand_list,
-        )
+        return fail(error)
 
     flash("Zeiteinträge gespeichert.", "success")
     # After a successful save free days with data reappear via auto-show from DB.

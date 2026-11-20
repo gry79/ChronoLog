@@ -31,23 +31,12 @@ def _parse_ym():
     return year, month
 
 
-@bp.route("/absences")
-@login_required
-def absences():
-    user = g.current_user
-    year, month = _parse_ym()
+def _render_absences(user, year: int, month: int, items):
     time_svc = current_app.config["TIME_SVC"]
     year, month = time_svc.clamp_month(user, year, month)
-
-    absence_svc = current_app.config["ABSENCE_SVC"]
-    items = absence_svc.list_for_month(user, year, month)
-    is_closed = current_app.config["TIME_SVC"].month_repo.is_closed(user.id, year, month)
-
+    is_closed = time_svc.month_repo.is_closed(user.id, year, month)
     sy, sm = current_app.config["BALANCE_SVC"].start_year_month(user)
-    can_prev = (year, month) > (sy, sm)
     today = date.today()
-    can_next = (year, month) < (today.year, today.month)
-
     return render_template(
         "absences.html",
         user=user,
@@ -56,11 +45,41 @@ def absences():
         label=month_label_de(year, month),
         items=items,
         is_closed=is_closed,
-        can_prev=can_prev,
-        can_next=can_next,
+        can_prev=(year, month) > (sy, sm),
+        can_next=(year, month) < (today.year, today.month),
         csrf_token=g.csrf_token,
         active_nav="absences",
     )
+
+
+def _posted_absence_rows() -> list[dict]:
+    dates_from = request.form.getlist("date_from")
+    dates_to = request.form.getlist("date_to")
+    hours = request.form.getlist("hours")
+    descs = request.form.getlist("description")
+    count = max(len(dates_from), len(dates_to), len(hours), len(descs), 0)
+    rows = []
+    for i in range(count):
+        rows.append(
+            {
+                "date_from": dates_from[i] if i < len(dates_from) else "",
+                "date_to": dates_to[i] if i < len(dates_to) else "",
+                "hours": hours[i] if i < len(hours) else "",
+                "description": descs[i] if i < len(descs) else "",
+                "error": "",
+            }
+        )
+    return rows
+
+
+@bp.route("/absences")
+@login_required
+def absences():
+    user = g.current_user
+    year, month = _parse_ym()
+    year, month = current_app.config["TIME_SVC"].clamp_month(user, year, month)
+    items = current_app.config["ABSENCE_SVC"].list_for_month(user, year, month)
+    return _render_absences(user, year, month, items)
 
 
 @bp.route("/absences/nav")
@@ -85,42 +104,29 @@ def absences_nav():
 @bp.route("/absences/save", methods=["POST"])
 @login_required
 def absences_save():
-    err = require_csrf()
-    if err:
-        flash(err, "error")
-        return redirect(url_for("absence.absences"))
-
     user = g.current_user
+    rows = _posted_absence_rows()
     try:
         year = int(request.form.get("year", ""))
         month = int(request.form.get("month", ""))
     except (TypeError, ValueError):
         flash("Ungültiger Monat.", "error")
-        return redirect(url_for("absence.absences"))
+        today = date.today()
+        return _render_absences(user, today.year, today.month, rows)
+
+    def fail(message: str):
+        flash(message, "error")
+        return _render_absences(user, year, month, rows)
+
+    err = require_csrf()
+    if err:
+        return fail(err)
 
     if current_app.config["TIME_SVC"].month_repo.is_closed(user.id, year, month):
-        flash("Monat ist abgeschlossen und kann nicht bearbeitet werden.", "error")
-        return redirect(url_for("absence.absences", year=year, month=month))
-
-    dates_from = request.form.getlist("date_from")
-    dates_to = request.form.getlist("date_to")
-    hours = request.form.getlist("hours")
-    descs = request.form.getlist("description")
-
-    rows = []
-    for i in range(len(dates_from)):
-        rows.append(
-            {
-                "date_from": dates_from[i],
-                "date_to": dates_to[i] if i < len(dates_to) else dates_from[i],
-                "hours": hours[i] if i < len(hours) else "",
-                "description": descs[i] if i < len(descs) else "",
-            }
-        )
+        return fail("Monat ist abgeschlossen und kann nicht bearbeitet werden.")
 
     error = current_app.config["ABSENCE_SVC"].save_for_month(user, year, month, rows)
     if error:
-        flash(error, "error")
-    else:
-        flash("Absenzen gespeichert.", "success")
+        return fail(error)
+    flash("Absenzen gespeichert.", "success")
     return redirect(url_for("absence.absences", year=year, month=month))
