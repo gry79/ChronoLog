@@ -17,6 +17,14 @@ from app.services.time_utils import (
 )
 
 
+def _mark_absence(row: dict, message: str, *more: dict) -> str:
+    """Attach a validation message to the submitted row and return it."""
+    row["error"] = message
+    for extra in more:
+        extra["error"] = message
+    return message
+
+
 class AbsenceService:
     def __init__(
         self,
@@ -41,6 +49,7 @@ class AbsenceService:
                     "date_to_display": a.date_to.strftime("%d.%m.%Y"),
                     "hours": a.hours if a.hours is not None else "",
                     "description": a.description,
+                    "error": "",
                 }
             )
         return result
@@ -67,14 +76,14 @@ class AbsenceService:
                 df = date.fromisoformat(df_raw)
                 dt = date.fromisoformat(dt_raw or df_raw)
             except ValueError:
-                return "Ungültiges Datumsformat"
+                return _mark_absence(row, "Ungültiges Datumsformat")
 
             if df.year != year or df.month != month:
-                return "Das Startdatum muss im gewählten Monat liegen"
+                return _mark_absence(row, "Das Startdatum muss im gewählten Monat liegen")
             if dt.year != year or dt.month != month:
-                return "Das Enddatum muss im gewählten Monat liegen"
+                return _mark_absence(row, "Das Enddatum muss im gewählten Monat liegen")
             if dt < df:
-                return "Enddatum muss am oder nach dem Startdatum liegen"
+                return _mark_absence(row, "Enddatum muss am oder nach dem Startdatum liegen")
 
             hours_raw = row.get("hours")
             hours: Optional[float] = None
@@ -83,9 +92,9 @@ class AbsenceService:
                     try:
                         hours = parse_decimal(str(hours_raw))
                     except ValueError:
-                        return "Ungültiger Stundenwert"
+                        return _mark_absence(row, "Ungültiger Stundenwert")
                     if hours < 0:
-                        return "Stunden dürfen nicht negativ sein"
+                        return _mark_absence(row, "Stunden dürfen nicht negativ sein")
             else:
                 hours = None  # multi-day: auto soll per day
 
@@ -94,7 +103,7 @@ class AbsenceService:
             # Validation against time entries and daily target
             err = self._validate_absence(user.id, df, dt, hours, chronos)
             if err:
-                return err
+                return _mark_absence(row, err)
 
             parsed.append(
                 {
@@ -103,6 +112,7 @@ class AbsenceService:
                     "date_to": dt,
                     "hours": hours,
                     "description": desc,
+                    "_src": row,
                 }
             )
 
@@ -110,7 +120,9 @@ class AbsenceService:
         for i, a in enumerate(parsed):
             for b in parsed[i + 1 :]:
                 if a["date_from"] <= b["date_to"] and b["date_from"] <= a["date_to"]:
-                    return "Absenzen dürfen sich nicht überlappen"
+                    return _mark_absence(
+                        b["_src"], "Absenzen dürfen sich nicht überlappen", a["_src"]
+                    )
 
         # Rows stored under another month (date_from outside this month) are kept.
         month_start = date(year, month, 1)
@@ -127,7 +139,7 @@ class AbsenceService:
             if self.absence_repo.has_overlap_with_dates(
                 user.id, item["date_from"], item["date_to"], replaced_ids
             ):
-                return "Absenzen dürfen sich nicht überlappen"
+                return _mark_absence(item["_src"], "Absenzen dürfen sich nicht überlappen")
 
         try:
             self.absence_repo.replace_for_month(user.id, year, month, parsed)

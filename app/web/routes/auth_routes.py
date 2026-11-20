@@ -32,6 +32,20 @@ from app.web.helpers import (
 bp = Blueprint("auth", __name__)
 
 
+def _register_error_field(error: str | None) -> str | None:
+    if not error:
+        return None
+    if error.startswith("Benutzername"):
+        return "username"
+    if "Vorname" in error or "Nachname" in error:
+        return "name"
+    if "E-Mail" in error:
+        return "email"
+    if "Passwort" in error:
+        return "password"
+    return None
+
+
 @bp.route("/")
 def index():
     user, _ = load_current_user()
@@ -55,6 +69,7 @@ def login():
 
     auth = get_auth()
     error = None
+    username = ""
     if request.method == "POST":
         username = request.form.get("username", "")
         password = request.form.get("password", "")
@@ -68,6 +83,7 @@ def login():
     return render_template(
         "login.html",
         error=error,
+        username=username,
         registration_allowed=auth.registration_allowed(),
     )
 
@@ -155,24 +171,33 @@ def register():
         return redirect(url_for("time.time_entry"))
 
     error = None
+    error_field = None
+    form = {"username": "", "first_name": "", "last_name": "", "email": ""}
     if request.method == "POST":
+        form = {
+            "username": request.form.get("username", ""),
+            "first_name": request.form.get("first_name", ""),
+            "last_name": request.form.get("last_name", ""),
+            "email": request.form.get("email", ""),
+        }
         new_user, error = auth.register(
-            username=request.form.get("username", ""),
-            first_name=request.form.get("first_name", ""),
-            last_name=request.form.get("last_name", ""),
-            email=request.form.get("email", ""),
+            username=form["username"],
+            first_name=form["first_name"],
+            last_name=form["last_name"],
+            email=form["email"],
             password=request.form.get("password", ""),
             password_repeat=request.form.get("password_repeat", ""),
         )
         if new_user and not error:
             # Auto-login after registration
             session_id, login_err, _ = auth.login(
-                request.form.get("username", ""),
+                form["username"],
                 request.form.get("password", ""),
             )
             if session_id:
                 resp = make_response(redirect(url_for("time.time_entry")))
                 return set_session_cookie(resp, session_id)
-            error = login_err or "Registration succeeded but login failed"
+            error = login_err or "Registrierung erfolgreich, Anmeldung fehlgeschlagen."
+        error_field = _register_error_field(error)
 
-    return render_template("register.html", error=error)
+    return render_template("register.html", error=error, error_field=error_field, form=form)

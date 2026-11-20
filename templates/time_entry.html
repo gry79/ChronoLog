@@ -104,7 +104,7 @@
           <tbody id="time-body" class="{% if view.is_closed %}opacity-90{% endif %}">
             {% for day in view.days %}
               {% for entry in day.entries %}
-              <tr class="border-t border-slate-100 hover:bg-slate-50/80 {% if day.is_expanded_zero %}bg-amber-50/40{% elif loop.first %}{% endif %}"
+              <tr class="border-t border-slate-100 hover:bg-slate-50/80 {% if entry.error %}bg-red-50{% elif day.is_expanded_zero %}bg-amber-50/40{% endif %}"
                   data-date="{{ day.entry_date.isoformat() }}">
                 <td class="px-3 py-1.5 whitespace-nowrap text-slate-600">
                   {% if loop.first %}
@@ -144,6 +144,9 @@
                   <input type="text" name="description" value="{{ entry.description }}" maxlength="256"
                          class="w-full border border-slate-300 rounded px-2 py-1 text-sm {% if view.is_closed %}bg-slate-100{% endif %}"
                          {% if view.is_closed %}readonly{% endif %}>
+                  {% if entry.error %}
+                  <p class="mt-1 text-xs text-red-700">{{ entry.error }}</p>
+                  {% endif %}
                 </td>
                 <td class="px-2 py-1">
                   <div class="flex items-center justify-center gap-1">
